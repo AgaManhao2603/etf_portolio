@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ETF Portfolio Tracker - Live Dashboard</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- Background Effects -->
+    <div class="bg-gradient"></div>
+    <div class="bg-noise"></div>
+    
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="container">
+            <div class="nav-brand">
+                <svg class="logo-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M13 2L3 14H12L11 22L21 10H12L13 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <span class="logo-text">ETF Portfolio</span>
+            </div>
+            <div class="nav-actions">
+                <button class="btn-ghost" id="refreshPrices">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
+                    </svg>
+                    Refresh
+                </button>
+                <button class="btn-primary" id="addTransactionBtn">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                    Add Transaction
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <div class="container">
+            
+            <!-- Portfolio Summary Cards -->
+            <div class="summary-grid">
+                <div class="summary-card" data-animate>
+                    <div class="card-icon portfolio">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <rect x="3" y="3" width="18" height="18" rx="2"/>
+                            <path d="M9 3v18M15 3v18M3 9h18M3 15h18"/>
+                        </svg>
+                    </div>
+                    <div class="card-content">
+                        <span class="card-label">Total Portfolio Value</span>
+                        <h2 class="card-value" id="totalValue">$0.00</h2>
+                        <span class="card-change positive" id="totalChange">+$0.00 (0.00%)</span>
+                    </div>
+                </div>
+
+                <div class="summary-card" data-animate>
+                    <div class="card-icon invested">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <line x1="12" y1="1" x2="12" y2="23"></line>
+                            <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+                        </svg>
+                    </div>
+                    <div class="card-content">
+                        <span class="card-label">Total Invested</span>
+                        <h2 class="card-value" id="totalInvested">$0.00</h2>
+                        <span class="card-subtitle">Across <span id="numPositions">0</span> positions</span>
+                    </div>
+                </div>
+
+                <div class="summary-card" data-animate>
+                    <div class="card-icon reserved">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path d="M20 12V8H6a2 2 0 0 1-2-2c0-1.1.9-2 2-2h12v4"/>
+                            <path d="M4 6v12c0 1.1.9 2 2 2h14v-4"/>
+                            <path d="M18 12a2 2 0 0 0-2 2c0 1.1.9 2 2 2h4v-4h-4z"/>
+                        </svg>
+                    </div>
+                    <div class="card-content">
+                        <span class="card-label">Reserved Capital</span>
+                        <h2 class="card-value" id="reservedCapital">$0.00</h2>
+                        <span class="card-subtitle">Available for deployment</span>
+                    </div>
+                </div>
+
+                <div class="summary-card" data-animate>
+                    <div class="card-icon gain">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline>
+                            <polyline points="17 6 23 6 23 12"></polyline>
+                        </svg>
+                    </div>
+                    <div class="card-content">
+                        <span class="card-label">Total Gain/Loss</span>
+                        <h2 class="card-value" id="totalGainLoss">$0.00</h2>
+                        <span class="card-change" id="gainLossPercent">0.00%</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab Navigation -->
+            <div class="tab-container">
+                <button class="tab-btn active" data-tab="dashboard">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <rect x="3" y="3" width="7" height="7"></rect>
+                        <rect x="14" y="3" width="7" height="7"></rect>
+                        <rect x="14" y="14" width="7" height="7"></rect>
+                        <rect x="3" y="14" width="7" height="7"></rect>
+                    </svg>
+                    Dashboard
+                </button>
+                <button class="tab-btn" data-tab="transactions">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <line x1="8" y1="6" x2="21" y2="6"></line>
+                        <line x1="8" y1="12" x2="21" y2="12"></line>
+                        <line x1="8" y1="18" x2="21" y2="18"></line>
+                        <line x1="3" y1="6" x2="3.01" y2="6"></line>
+                        <line x1="3" y1="12" x2="3.01" y2="12"></line>
+                        <line x1="3" y1="18" x2="3.01" y2="18"></line>
+                    </svg>
+                    Transactions
+                </button>
+                <button class="tab-btn" data-tab="strategy">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <path d="M12 20h9"></path>
+                        <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+                    </svg>
+                    Strategy
+                </button>
+            </div>
+
+            <!-- Dashboard Tab -->
+            <div class="tab-content active" id="dashboard-tab">
+                <div class="table-container">
+                    <table class="portfolio-table">
+                        <thead>
+                            <tr>
+                                <th>ETF</th>
+                                <th>Shares</th>
+                                <th>Avg. Entry</th>
+                                <th>Invested</th>
+                                <th>Current Price</th>
+                                <th>Current Value</th>
+                                <th>Gain/Loss</th>
+                                <th>Return %</th>
+                                <th>Reserved</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="portfolioTableBody">
+                            <!-- Populated by JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Transactions Tab -->
+            <div class="tab-content" id="transactions-tab">
+                <div class="table-container">
+                    <table class="transactions-table">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>ETF</th>
+                                <th>Action</th>
+                                <th>Shares</th>
+                                <th>Price</th>
+                                <th>Total</th>
+                                <th>Notes</th>
+                            </tr>
+                        </thead>
+                        <tbody id="transactionsTableBody">
+                            <!-- Populated by JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Strategy Tab -->
+            <div class="tab-content" id="strategy-tab">
+                <div class="strategy-grid" id="strategyGrid">
+                    <!-- Populated by JavaScript -->
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- Add Transaction Modal -->
+    <div class="modal" id="addTransactionModal">
+        <div class="modal-overlay" id="modalOverlay"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Add New Transaction</h2>
+                <button class="modal-close" id="modalClose">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+            <form class="modal-form" id="transactionForm">
+                <div class="form-group">
+                    <label for="txDate">Date</label>
+                    <input type="date" id="txDate" required>
+                </div>
+                <div class="form-group">
+                    <label for="txETF">ETF Symbol</label>
+                    <input type="text" id="txETF" placeholder="e.g., SOXX" required>
+                </div>
+                <div class="form-group">
+                    <label for="txAction">Action</label>
+                    <select id="txAction" required>
+                        <option value="BUY">BUY</option>
+                        <option value="SELL">SELL</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="txShares">Number of Shares</label>
+                    <input type="number" id="txShares" step="0.01" placeholder="e.g., 50.5" required>
+                </div>
+                <div class="form-group">
+                    <label for="txPrice">Price per Share</label>
+                    <input type="number" id="txPrice" step="0.01" placeholder="e.g., 250.00" required>
+                </div>
+                <div class="form-group">
+                    <label for="txTotal">Total Amount</label>
+                    <input type="number" id="txTotal" step="0.01" readonly>
+                </div>
+                <div class="form-group">
+                    <label for="txNotes">Notes (Optional)</label>
+                    <textarea id="txNotes" rows="3" placeholder="Add any additional notes..."></textarea>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn-ghost" id="cancelBtn">Cancel</button>
+                    <button type="submit" class="btn-primary">Add Transaction</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Last Updated Footer -->
+    <footer class="footer">
+        <div class="container">
+            <p>Last updated: <span id="lastUpdated">--</span></p>
+            <p class="footer-note">Prices update automatically. Data stored locally in your browser.</p>
+        </div>
+    </footer>
+
+    <script src="app.js"></script>
+</body>
+</html>
