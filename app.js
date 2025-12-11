@@ -79,8 +79,6 @@ async function fetchCurrentPrices() {
     const symbols = portfolio.map(p => p.etf).join(',');
     
     try {
-        // Using Yahoo Finance API alternative (free, no API key required)
-        // Note: In production, you'd want to use a more reliable API with rate limiting
         const response = await fetch(`https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbols}`);
         const data = await response.json();
         
@@ -91,7 +89,6 @@ async function fetchCurrentPrices() {
         }
     } catch (error) {
         console.warn('Unable to fetch live prices, using cached/default values:', error);
-        // Fallback to manual prices from your spreadsheet
         currentPrices = {
             'SOXX': 316.29,
             'IWM': 254.81,
@@ -138,7 +135,6 @@ function calculateMetrics() {
 function renderDashboard() {
     const metrics = calculateMetrics();
     
-    // Update summary cards
     document.getElementById('totalValue').textContent = formatCurrency(metrics.totalValue);
     document.getElementById('totalInvested').textContent = formatCurrency(metrics.totalInvested);
     document.getElementById('reservedCapital').textContent = formatCurrency(metrics.totalReserved);
@@ -155,7 +151,6 @@ function renderDashboard() {
     gainPercentElement.textContent = `${changePercent}%`;
     gainPercentElement.className = metrics.totalGainLoss >= 0 ? 'card-change positive' : 'card-change negative';
     
-    // Render portfolio table
     const tbody = document.getElementById('portfolioTableBody');
     tbody.innerHTML = '';
     
@@ -201,7 +196,6 @@ function renderTransactions() {
     const tbody = document.getElementById('transactionsTableBody');
     tbody.innerHTML = '';
     
-    // Sort transactions by date (most recent first)
     const sortedTransactions = [...transactions].sort((a, b) => new Date(b.date) - new Date(a.date));
     
     sortedTransactions.forEach(tx => {
@@ -281,7 +275,6 @@ function updateLastUpdated() {
 
 // Event listeners
 function setupEventListeners() {
-    // Tab switching
     document.querySelectorAll('.tab-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             const tabName = btn.dataset.tab;
@@ -289,7 +282,6 @@ function setupEventListeners() {
         });
     });
     
-    // Add transaction modal
     const modal = document.getElementById('addTransactionModal');
     const addBtn = document.getElementById('addTransactionBtn');
     const closeBtn = document.getElementById('modalClose');
@@ -301,7 +293,6 @@ function setupEventListeners() {
     overlay.addEventListener('click', () => closeModal());
     cancelBtn.addEventListener('click', () => closeModal());
     
-    // Form auto-calculation
     const sharesInput = document.getElementById('txShares');
     const priceInput = document.getElementById('txPrice');
     const totalInput = document.getElementById('txTotal');
@@ -315,30 +306,25 @@ function setupEventListeners() {
     sharesInput.addEventListener('input', calculateTotal);
     priceInput.addEventListener('input', calculateTotal);
     
-    // Form submission
     const form = document.getElementById('transactionForm');
     form.addEventListener('submit', (e) => {
         e.preventDefault();
         addTransaction();
     });
     
-    // Refresh prices
     document.getElementById('refreshPrices').addEventListener('click', () => {
         fetchCurrentPrices();
     });
     
-    // Set default date to today
     document.getElementById('txDate').valueAsDate = new Date();
 }
 
 function switchTab(tabName) {
-    // Update tab buttons
     document.querySelectorAll('.tab-btn').forEach(btn => {
         btn.classList.remove('active');
     });
     document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
     
-    // Update tab content
     document.querySelectorAll('.tab-content').forEach(content => {
         content.classList.remove('active');
     });
@@ -366,22 +352,17 @@ function addTransaction() {
         notes: document.getElementById('txNotes').value
     };
     
-    // Add to transactions
     transactions.push(transaction);
     saveTransactions();
     
-    // Update portfolio
     updatePortfolioFromTransaction(transaction);
     
-    // Re-render
     renderDashboard();
     renderTransactions();
     renderStrategy();
     
-    // Close modal
     closeModal();
     
-    // Show success feedback
     showNotification('Transaction added successfully!');
 }
 
@@ -389,7 +370,6 @@ function updatePortfolioFromTransaction(tx) {
     let position = portfolio.find(p => p.etf === tx.etf);
     
     if (!position) {
-        // Create new position
         position = {
             etf: tx.etf,
             shares: 0,
@@ -402,7 +382,6 @@ function updatePortfolioFromTransaction(tx) {
     }
     
     if (tx.action === 'BUY') {
-        // Calculate new average entry price
         const totalCost = (position.shares * position.avgEntry) + tx.total;
         const totalShares = position.shares + tx.shares;
         position.avgEntry = totalCost / totalShares;
@@ -417,14 +396,11 @@ function updatePortfolioFromTransaction(tx) {
 }
 
 function showNotification(message) {
-    // Simple notification (you can enhance this)
     alert(message);
 }
 
-// Auto-refresh prices every 5 minutes
 setInterval(() => {
     fetchCurrentPrices();
 }, 5 * 60 * 1000);
 
-// Initialize on page load
 document.addEventListener('DOMContentLoaded', initializeApp);
