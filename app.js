@@ -1,15 +1,19 @@
-// ETF Portfolio Tracker - App Logic
-// Data stored in localStorage for persistence
+// ETF Portfolio Tracker - Enhanced with Automatic Price Updates
+// Features:
+// - Automatic overnight price refresh
+// - Periodic updates during market hours
+// - Smart caching to avoid rate limits
+// - Last update timestamp tracking
 
-// Initial data from your spreadsheet
+// Initial portfolio data (from your spreadsheet)
 const initialPortfolio = [
-    { etf: 'SOXX', shares: 107.14, avgEntry: 280.01, invested: 30000, reserved: 40000, strategy: 'Buy at $300 (light), $290 (ideal)' },
-    { etf: 'IWM', shares: 30.04, avgEntry: 249.67, invested: 7500, reserved: 35000, strategy: 'Buy at $245 (light), $238 (ideal)' },
-    { etf: 'ARKK', shares: 0, avgEntry: 0, invested: 0, reserved: 40000, strategy: 'Buy at $78 (light), $73 (ideal)' },
-    { etf: 'VWO', shares: 414.46, avgEntry: 54.11, invested: 22425.26, reserved: 5000, strategy: 'Buy at $52.5 (light), $50–51 (ideal)' },
-    { etf: 'INDA', shares: 140.42, avgEntry: 53.41, invested: 7500, reserved: 0, strategy: 'Good entry around $52 (light), $50 (ideal)' },
-    { etf: 'AIA', shares: 78.35, avgEntry: 95.72, invested: 7500, reserved: 0, strategy: 'Buy near $60 (light), $57 (ideal)' },
-    { etf: 'SCHD', shares: 449.64, avgEntry: 27.80, invested: 12500, reserved: 0, strategy: 'Stable. Good long-term entry anytime.' },
+    { etf: 'SOXX', shares: 107.14, avgEntry: 280.00, invested: 30000, reserved: 0, strategy: 'Semiconductors - Wait for RSI cooldown below 70.' },
+    { etf: 'IWM', shares: 30.04, avgEntry: 249.63, invested: 7500, reserved: 7500, strategy: 'Small-cap value - Buy on dips.' },
+    { etf: 'ARKK', shares: 0, avgEntry: 0, invested: 0, reserved: 20000, strategy: 'Innovation - Wait for RSI < 70, target ~$75-78 range.' },
+    { etf: 'VWO', shares: 414.46, avgEntry: 54.10, invested: 22425.26, reserved: 0, strategy: 'Emerging markets diversification.' },
+    { etf: 'INDA', shares: 140.42, avgEntry: 53.41, invested: 7500, reserved: 0, strategy: 'India growth exposure.' },
+    { etf: 'AIA', shares: 78.35, avgEntry: 95.72, invested: 7500, reserved: 0, strategy: 'Asia ex-Japan exposure.' },
+    { etf: 'SCHD', shares: 449.64, avgEntry: 27.80, invested: 12500, reserved: 0, strategy: 'Good long-term entry anytime.' },
     { etf: 'HYG', shares: 123.92, avgEntry: 80.70, invested: 10000, reserved: 0, strategy: 'Stable high-yield bond exposure.' },
     { etf: 'IBIT', shares: 0, avgEntry: 0, invested: 0, reserved: 70000, strategy: 'BTC retracement targets: -15%, -25%, -35%' }
 ];
@@ -29,6 +33,21 @@ const initialTransactions = [
 let portfolio = [];
 let transactions = [];
 let currentPrices = {};
+let lastPriceUpdate = null;
+let priceUpdateInterval = null;
+
+// Price update configuration
+const PRICE_UPDATE_CONFIG = {
+    // Update every 5 minutes during market hours
+    marketHoursInterval: 5 * 60 * 1000,
+    // Update every 2 hours outside market hours
+    afterHoursInterval: 2 * 60 * 60 * 1000,
+    // Force update if data is older than 30 minutes
+    staleThreshold: 30 * 60 * 1000,
+    // Cache prices in localStorage
+    cacheKey: 'etf_price_cache',
+    cacheTimestampKey: 'etf_price_cache_timestamp'
+};
 
 // Initialize app
 function initializeApp() {
@@ -50,8 +69,14 @@ function initializeApp() {
         saveTransactions();
     }
     
-    // Fetch current prices
+    // Load cached prices first for instant display
+    loadCachedPrices();
+    
+    // Then fetch fresh prices
     fetchCurrentPrices();
+    
+    // Setup automatic price updates
+    setupAutomaticUpdates();
     
     // Render initial view
     renderDashboard();
@@ -65,6 +90,77 @@ function initializeApp() {
     updateLastUpdated();
 }
 
+// Load cached prices from localStorage
+function loadCachedPrices() {
+    const cachedPrices = localStorage.getItem(PRICE_UPDATE_CONFIG.cacheKey);
+    const cacheTimestamp = localStorage.getItem(PRICE_UPDATE_CONFIG.cacheTimestampKey);
+    
+    if (cachedPrices && cacheTimestamp) {
+        const age = Date.now() - parseInt(cacheTimestamp);
+        if (age < PRICE_UPDATE_CONFIG.staleThreshold) {
+            currentPrices = JSON.parse(cachedPrices);
+            lastPriceUpdate = new Date(parseInt(cacheTimestamp));
+            console.log('Loaded cached prices from', lastPriceUpdate);
+        }
+    }
+}
+
+// Cache prices to localStorage
+function cachePrices() {
+    localStorage.setItem(PRICE_UPDATE_CONFIG.cacheKey, JSON.stringify(currentPrices));
+    localStorage.setItem(PRICE_UPDATE_CONFIG.cacheTimestampKey, Date.now().toString());
+}
+
+// Check if we're in market hours (US market: 9:30 AM - 4:00 PM ET, Mon-Fri)
+function isMarketHours() {
+    const now = new Date();
+    const day = now.getUTCDay();
+    const hours = now.getUTCHours();
+    
+    // Weekend check (0 = Sunday, 6 = Saturday)
+    if (day === 0 || day === 6) return false;
+    
+    // US Market hours in UTC: 14:30 - 21:00 (9:30 AM - 4:00 PM ET)
+    // Adjusting for daylight saving time variations
+    return hours >= 13 && hours < 22;
+}
+
+// Setup automatic price updates
+function setupAutomaticUpdates() {
+    // Clear any existing interval
+    if (priceUpdateInterval) {
+        clearInterval(priceUpdateInterval);
+    }
+    
+    // Determine update frequency based on market hours
+    const updateInterval = isMarketHours() 
+        ? PRICE_UPDATE_CONFIG.marketHoursInterval 
+        : PRICE_UPDATE_CONFIG.afterHoursInterval;
+    
+    console.log(`Setting up price updates every ${updateInterval / 1000 / 60} minutes`);
+    
+    // Set up periodic updates
+    priceUpdateInterval = setInterval(() => {
+        console.log('Automatic price update triggered');
+        fetchCurrentPrices(true);
+    }, updateInterval);
+    
+    // Also check when page becomes visible again (handles overnight scenarios)
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) {
+            const timeSinceUpdate = lastPriceUpdate 
+                ? Date.now() - lastPriceUpdate.getTime() 
+                : Infinity;
+            
+            // If more than 30 minutes since last update, fetch fresh prices
+            if (timeSinceUpdate > PRICE_UPDATE_CONFIG.staleThreshold) {
+                console.log('Page visible after long period, fetching fresh prices');
+                fetchCurrentPrices(true);
+            }
+        }
+    });
+}
+
 // Save data to localStorage
 function savePortfolio() {
     localStorage.setItem('etf_portfolio', JSON.stringify(portfolio));
@@ -74,36 +170,79 @@ function saveTransactions() {
     localStorage.setItem('etf_transactions', JSON.stringify(transactions));
 }
 
-// Fetch current prices using a financial API
-async function fetchCurrentPrices() {
+// Fetch current prices using Yahoo Finance API
+async function fetchCurrentPrices(isAutoUpdate = false) {
     const symbols = portfolio.map(p => p.etf).join(',');
     
+    // Show update indicator
+    if (isAutoUpdate) {
+        showUpdateIndicator();
+    }
+    
     try {
+        console.log(`Fetching prices for: ${symbols}`);
         const response = await fetch(`https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbols}`);
         const data = await response.json();
         
         if (data.quoteResponse && data.quoteResponse.result) {
+            let pricesUpdated = false;
             data.quoteResponse.result.forEach(quote => {
-                currentPrices[quote.symbol] = quote.regularMarketPrice || 0;
+                const newPrice = quote.regularMarketPrice || 0;
+                if (newPrice > 0 && newPrice !== currentPrices[quote.symbol]) {
+                    currentPrices[quote.symbol] = newPrice;
+                    pricesUpdated = true;
+                }
             });
+            
+            if (pricesUpdated) {
+                lastPriceUpdate = new Date();
+                cachePrices();
+                renderDashboard();
+                updateLastUpdated();
+                console.log('Prices updated successfully at', lastPriceUpdate);
+            }
         }
     } catch (error) {
-        console.warn('Unable to fetch live prices, using cached/default values:', error);
-        currentPrices = {
-            'SOXX': 316.29,
-            'IWM': 254.81,
-            'ARKK': 83.16,
-            'VWO': 54.55,
-            'INDA': 53.37,
-            'AIA': 98.09,
-            'SCHD': 27.57,
-            'HYG': 80.74,
-            'IBIT': 52.49
-        };
+        console.warn('Unable to fetch live prices:', error);
+        
+        // Use cached prices if available, otherwise fallback
+        if (Object.keys(currentPrices).length === 0) {
+            currentPrices = {
+                'SOXX': 316.29,
+                'IWM': 254.81,
+                'ARKK': 83.16,
+                'VWO': 54.55,
+                'INDA': 53.37,
+                'AIA': 98.09,
+                'SCHD': 27.57,
+                'HYG': 80.74,
+                'IBIT': 52.49
+            };
+            lastPriceUpdate = new Date();
+            console.log('Using fallback prices');
+        }
+    } finally {
+        if (isAutoUpdate) {
+            hideUpdateIndicator();
+        }
     }
-    
-    renderDashboard();
-    updateLastUpdated();
+}
+
+// Show/hide update indicator
+function showUpdateIndicator() {
+    const indicator = document.getElementById('updateIndicator');
+    if (indicator) {
+        indicator.style.display = 'flex';
+    }
+}
+
+function hideUpdateIndicator() {
+    const indicator = document.getElementById('updateIndicator');
+    if (indicator) {
+        setTimeout(() => {
+            indicator.style.display = 'none';
+        }, 1000);
+    }
 }
 
 // Calculate portfolio metrics
@@ -135,6 +274,7 @@ function calculateMetrics() {
 function renderDashboard() {
     const metrics = calculateMetrics();
     
+    // Update summary cards
     document.getElementById('totalValue').textContent = formatCurrency(metrics.totalValue);
     document.getElementById('totalInvested').textContent = formatCurrency(metrics.totalInvested);
     document.getElementById('reservedCapital').textContent = formatCurrency(metrics.totalReserved);
@@ -149,258 +289,325 @@ function renderDashboard() {
     
     const gainPercentElement = document.getElementById('gainLossPercent');
     gainPercentElement.textContent = `${changePercent}%`;
-    gainPercentElement.className = metrics.totalGainLoss >= 0 ? 'card-change positive' : 'card-change negative';
+    gainPercentElement.className = metrics.totalGainLoss >= 0 ? 'positive' : 'negative';
     
-    const tbody = document.getElementById('portfolioTableBody');
+    // Render positions
+    renderPositions();
+}
+
+// Render positions table
+function renderPositions() {
+    const tbody = document.getElementById('positionsBody');
+    tbody.innerHTML = '';
+    
+    portfolio.forEach((position, index) => {
+        const currentPrice = currentPrices[position.etf] || 0;
+        const currentValue = position.shares * currentPrice;
+        const gainLoss = currentValue - position.invested;
+        const gainLossPercent = position.invested > 0 ? (gainLoss / position.invested) * 100 : 0;
+        
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td class="etf-symbol">${position.etf}</td>
+            <td>${position.shares.toFixed(2)}</td>
+            <td>${formatCurrency(position.avgEntry)}</td>
+            <td class="current-price">${formatCurrency(currentPrice)}</td>
+            <td>${formatCurrency(position.invested)}</td>
+            <td>${formatCurrency(currentValue)}</td>
+            <td class="${gainLoss >= 0 ? 'positive' : 'negative'}">
+                ${formatCurrency(gainLoss)}<br>
+                <small>(${gainLossPercent.toFixed(2)}%)</small>
+            </td>
+            <td>${formatCurrency(position.reserved)}</td>
+            <td class="actions">
+                <button class="btn-small btn-primary" onclick="openTransactionModal('${position.etf}', 'BUY')">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                    Buy
+                </button>
+                <button class="btn-small btn-danger" onclick="openTransactionModal('${position.etf}', 'SELL')" ${position.shares === 0 ? 'disabled' : ''}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                    Sell
+                </button>
+            </td>
+        `;
+        tbody.appendChild(row);
+    });
+}
+
+// Render transactions table
+function renderTransactions() {
+    const tbody = document.getElementById('transactionsBody');
+    tbody.innerHTML = '';
+    
+    // Sort transactions by date (newest first)
+    const sortedTransactions = [...transactions].sort((a, b) => new Date(b.date) - new Date(a.date));
+    
+    sortedTransactions.forEach((transaction, index) => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>${formatDate(transaction.date)}</td>
+            <td class="etf-symbol">${transaction.etf}</td>
+            <td class="action ${transaction.action.toLowerCase()}">${transaction.action}</td>
+            <td>${transaction.shares.toFixed(2)}</td>
+            <td>${formatCurrency(transaction.price)}</td>
+            <td>${formatCurrency(transaction.total)}</td>
+            <td>${transaction.notes || '-'}</td>
+            <td class="actions">
+                <button class="btn-icon" onclick="deleteTransaction(${index})" title="Delete">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="3 6 5 6 21 6"></polyline>
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                    </svg>
+                </button>
+            </td>
+        `;
+        tbody.appendChild(row);
+    });
+}
+
+// Render strategy notes
+function renderStrategy() {
+    const tbody = document.getElementById('strategyBody');
     tbody.innerHTML = '';
     
     portfolio.forEach(position => {
         const currentPrice = currentPrices[position.etf] || 0;
-        const currentValue = position.shares * currentPrice;
-        const gainLoss = currentValue - position.invested;
-        const returnPercent = position.invested > 0 ? (gainLoss / position.invested) * 100 : 0;
-        
-        let status = 'NOT STARTED';
-        let statusClass = 'status-not-started';
-        if (position.shares > 0 && position.reserved > 0) {
-            status = 'BUILDING';
-            statusClass = 'status-building';
-        } else if (position.shares > 0) {
-            status = 'COMPLETE';
-            statusClass = 'status-complete';
-        }
+        const priceVsEntry = position.avgEntry > 0 
+            ? ((currentPrice - position.avgEntry) / position.avgEntry * 100).toFixed(2)
+            : 0;
         
         const row = document.createElement('tr');
         row.innerHTML = `
-            <td><span class="etf-symbol">${position.etf}</span></td>
-            <td class="mono">${position.shares.toFixed(2)}</td>
-            <td class="mono">${formatCurrency(position.avgEntry)}</td>
-            <td class="mono">${formatCurrency(position.invested)}</td>
-            <td class="mono">${formatCurrency(currentPrice)}</td>
-            <td class="mono">${formatCurrency(currentValue)}</td>
-            <td class="mono ${gainLoss >= 0 ? 'gain-positive' : 'gain-negative'}">
-                ${formatCurrency(gainLoss)}
+            <td class="etf-symbol">${position.etf}</td>
+            <td>${position.strategy}</td>
+            <td>${formatCurrency(position.avgEntry)}</td>
+            <td class="current-price">${formatCurrency(currentPrice)}</td>
+            <td class="${parseFloat(priceVsEntry) >= 0 ? 'positive' : 'negative'}">
+                ${priceVsEntry}%
             </td>
-            <td class="mono ${returnPercent >= 0 ? 'gain-positive' : 'gain-negative'}">
-                ${returnPercent.toFixed(2)}%
-            </td>
-            <td class="mono">${formatCurrency(position.reserved)}</td>
-            <td><span class="status-badge ${statusClass}">${status}</span></td>
+            <td>${formatCurrency(position.reserved)}</td>
         `;
         tbody.appendChild(row);
     });
 }
 
-// Render transactions
-function renderTransactions() {
-    const tbody = document.getElementById('transactionsTableBody');
-    tbody.innerHTML = '';
-    
-    const sortedTransactions = [...transactions].sort((a, b) => new Date(b.date) - new Date(a.date));
-    
-    sortedTransactions.forEach(tx => {
-        const row = document.createElement('tr');
-        row.innerHTML = `
-            <td class="mono">${formatDate(tx.date)}</td>
-            <td><span class="etf-symbol">${tx.etf}</span></td>
-            <td><span class="action-${tx.action.toLowerCase()}">${tx.action}</span></td>
-            <td class="mono">${tx.shares.toFixed(2)}</td>
-            <td class="mono">${formatCurrency(tx.price)}</td>
-            <td class="mono">${formatCurrency(tx.total)}</td>
-            <td>${tx.notes || '-'}</td>
-        `;
-        tbody.appendChild(row);
-    });
-}
-
-// Render strategy
-function renderStrategy() {
-    const grid = document.getElementById('strategyGrid');
-    grid.innerHTML = '';
-    
-    portfolio.forEach(position => {
-        const card = document.createElement('div');
-        card.className = 'strategy-card';
-        card.innerHTML = `
-            <div class="strategy-header">
-                <span class="strategy-etf">${position.etf}</span>
-                <span class="status-badge ${getStatusClass(position)}">${getStatus(position)}</span>
-            </div>
-            <div class="strategy-content">
-                ${position.strategy}
-            </div>
-        `;
-        grid.appendChild(card);
-    });
-}
-
-// Helper functions
-function getStatus(position) {
-    if (position.shares === 0) return 'NOT STARTED';
-    if (position.reserved > 0) return 'BUILDING';
-    return 'COMPLETE';
-}
-
-function getStatusClass(position) {
-    const status = getStatus(position);
-    if (status === 'NOT STARTED') return 'status-not-started';
-    if (status === 'BUILDING') return 'status-building';
-    return 'status-complete';
-}
-
-function formatCurrency(value) {
+// Format currency
+function formatCurrency(amount) {
     return new Intl.NumberFormat('en-US', {
         style: 'currency',
         currency: 'USD',
         minimumFractionDigits: 2,
         maximumFractionDigits: 2
-    }).format(value);
+    }).format(amount);
 }
 
+// Format date
 function formatDate(dateString) {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
-}
-
-function updateLastUpdated() {
-    const now = new Date();
-    document.getElementById('lastUpdated').textContent = now.toLocaleString('en-US', {
+    return new Date(dateString).toLocaleDateString('en-US', {
         year: 'numeric',
         month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
+        day: 'numeric'
     });
 }
 
-// Event listeners
-function setupEventListeners() {
-    document.querySelectorAll('.tab-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const tabName = btn.dataset.tab;
-            switchTab(tabName);
-        });
-    });
-    
-    const modal = document.getElementById('addTransactionModal');
-    const addBtn = document.getElementById('addTransactionBtn');
-    const closeBtn = document.getElementById('modalClose');
-    const overlay = document.getElementById('modalOverlay');
-    const cancelBtn = document.getElementById('cancelBtn');
-    
-    addBtn.addEventListener('click', () => openModal());
-    closeBtn.addEventListener('click', () => closeModal());
-    overlay.addEventListener('click', () => closeModal());
-    cancelBtn.addEventListener('click', () => closeModal());
-    
-    const sharesInput = document.getElementById('txShares');
-    const priceInput = document.getElementById('txPrice');
-    const totalInput = document.getElementById('txTotal');
-    
-    function calculateTotal() {
-        const shares = parseFloat(sharesInput.value) || 0;
-        const price = parseFloat(priceInput.value) || 0;
-        totalInput.value = (shares * price).toFixed(2);
+// Update last updated timestamp
+function updateLastUpdated() {
+    const element = document.getElementById('lastUpdated');
+    if (element && lastPriceUpdate) {
+        const now = new Date();
+        const diff = Math.floor((now - lastPriceUpdate) / 1000);
+        
+        let timeAgo;
+        if (diff < 60) {
+            timeAgo = 'just now';
+        } else if (diff < 3600) {
+            const minutes = Math.floor(diff / 60);
+            timeAgo = `${minutes} minute${minutes > 1 ? 's' : ''} ago`;
+        } else {
+            const hours = Math.floor(diff / 3600);
+            timeAgo = `${hours} hour${hours > 1 ? 's' : ''} ago`;
+        }
+        
+        element.textContent = `Last updated: ${timeAgo}`;
     }
     
-    sharesInput.addEventListener('input', calculateTotal);
-    priceInput.addEventListener('input', calculateTotal);
-    
+    // Update again in 1 minute
+    setTimeout(updateLastUpdated, 60000);
+}
+
+// Open transaction modal
+function openTransactionModal(etf = '', action = 'BUY') {
+    const modal = document.getElementById('transactionModal');
     const form = document.getElementById('transactionForm');
-    form.addEventListener('submit', (e) => {
-        e.preventDefault();
-        addTransaction();
-    });
+    const title = document.getElementById('modalTitle');
     
-    document.getElementById('refreshPrices').addEventListener('click', () => {
-        fetchCurrentPrices();
-    });
+    title.textContent = `${action} ${etf || 'ETF'}`;
+    form.reset();
     
-    document.getElementById('txDate').valueAsDate = new Date();
-}
-
-function switchTab(tabName) {
-    document.querySelectorAll('.tab-btn').forEach(btn => {
-        btn.classList.remove('active');
-    });
-    document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
+    document.getElementById('transactionETF').value = etf;
+    document.getElementById('transactionAction').value = action;
+    document.getElementById('transactionDate').value = new Date().toISOString().split('T')[0];
     
-    document.querySelectorAll('.tab-content').forEach(content => {
-        content.classList.remove('active');
-    });
-    document.getElementById(`${tabName}-tab`).classList.add('active');
+    modal.style.display = 'flex';
 }
 
-function openModal() {
-    document.getElementById('addTransactionModal').classList.add('active');
+// Close transaction modal
+function closeTransactionModal() {
+    document.getElementById('transactionModal').style.display = 'none';
 }
 
-function closeModal() {
-    document.getElementById('addTransactionModal').classList.remove('active');
-    document.getElementById('transactionForm').reset();
-    document.getElementById('txDate').valueAsDate = new Date();
-}
-
-function addTransaction() {
+// Add transaction
+function addTransaction(event) {
+    event.preventDefault();
+    
+    const etf = document.getElementById('transactionETF').value.toUpperCase();
+    const action = document.getElementById('transactionAction').value;
+    const shares = parseFloat(document.getElementById('transactionShares').value);
+    const price = parseFloat(document.getElementById('transactionPrice').value);
+    const date = document.getElementById('transactionDate').value;
+    const notes = document.getElementById('transactionNotes').value;
+    
+    const total = shares * price;
+    
     const transaction = {
-        date: document.getElementById('txDate').value,
-        etf: document.getElementById('txETF').value.toUpperCase(),
-        action: document.getElementById('txAction').value,
-        shares: parseFloat(document.getElementById('txShares').value),
-        price: parseFloat(document.getElementById('txPrice').value),
-        total: parseFloat(document.getElementById('txTotal').value),
-        notes: document.getElementById('txNotes').value
+        date,
+        etf,
+        action,
+        shares,
+        price,
+        total,
+        notes
     };
     
     transactions.push(transaction);
     saveTransactions();
     
-    updatePortfolioFromTransaction(transaction);
+    // Update portfolio
+    updatePortfolio(etf, action, shares, price, total);
     
+    // Refresh views
     renderDashboard();
     renderTransactions();
     renderStrategy();
     
-    closeModal();
-    
-    showNotification('Transaction added successfully!');
+    // Close modal
+    closeTransactionModal();
 }
 
-function updatePortfolioFromTransaction(tx) {
-    let position = portfolio.find(p => p.etf === tx.etf);
+// Update portfolio based on transaction
+function updatePortfolio(etf, action, shares, price, total) {
+    let position = portfolio.find(p => p.etf === etf);
     
     if (!position) {
+        // Create new position
         position = {
-            etf: tx.etf,
+            etf,
             shares: 0,
             avgEntry: 0,
             invested: 0,
             reserved: 0,
-            strategy: ''
+            strategy: 'Add your strategy notes here'
         };
         portfolio.push(position);
     }
     
-    if (tx.action === 'BUY') {
-        const totalCost = (position.shares * position.avgEntry) + tx.total;
-        const totalShares = position.shares + tx.shares;
-        position.avgEntry = totalCost / totalShares;
-        position.shares = totalShares;
-        position.invested += tx.total;
-    } else if (tx.action === 'SELL') {
-        position.shares -= tx.shares;
-        position.invested -= tx.total;
+    if (action === 'BUY') {
+        const newTotalShares = position.shares + shares;
+        const newTotalInvested = position.invested + total;
+        position.avgEntry = newTotalInvested / newTotalShares;
+        position.shares = newTotalShares;
+        position.invested = newTotalInvested;
+        
+        // Reduce reserved capital
+        if (position.reserved >= total) {
+            position.reserved -= total;
+        } else {
+            position.reserved = 0;
+        }
+    } else if (action === 'SELL') {
+        const soldValue = shares * position.avgEntry;
+        position.shares -= shares;
+        position.invested -= soldValue;
+        
+        if (position.shares <= 0) {
+            position.shares = 0;
+            position.avgEntry = 0;
+            position.invested = 0;
+        }
     }
     
     savePortfolio();
 }
 
-function showNotification(message) {
-    alert(message);
+// Delete transaction
+function deleteTransaction(index) {
+    if (confirm('Are you sure you want to delete this transaction?')) {
+        transactions.splice(index, 1);
+        saveTransactions();
+        
+        // Recalculate entire portfolio from scratch
+        recalculatePortfolio();
+        
+        renderDashboard();
+        renderTransactions();
+        renderStrategy();
+    }
 }
 
-setInterval(() => {
-    fetchCurrentPrices();
-}, 5 * 60 * 1000);
+// Recalculate portfolio from transactions
+function recalculatePortfolio() {
+    // Reset all positions
+    portfolio = [...initialPortfolio];
+    
+    // Replay all transactions
+    transactions.forEach(t => {
+        updatePortfolio(t.etf, t.action, t.shares, t.price, t.total);
+    });
+    
+    savePortfolio();
+}
 
-document.addEventListener('DOMContentLoaded', initializeApp);
+// Setup event listeners
+function setupEventListeners() {
+    // Tab switching
+    document.querySelectorAll('.tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            
+            tab.classList.add('active');
+            const tabId = tab.dataset.tab;
+            document.getElementById(tabId).classList.add('active');
+        });
+    });
+    
+    // Modal close on background click
+    document.getElementById('transactionModal').addEventListener('click', (e) => {
+        if (e.target.id === 'transactionModal') {
+            closeTransactionModal();
+        }
+    });
+    
+    // Form submission
+    document.getElementById('transactionForm').addEventListener('submit', addTransaction);
+    
+    // Manual refresh button
+    const refreshBtn = document.getElementById('refreshPrices');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', () => {
+            fetchCurrentPrices(true);
+        });
+    }
+}
+
+// Initialize when DOM is ready
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initializeApp);
+} else {
+    initializeApp();
+}
