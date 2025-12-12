@@ -192,7 +192,7 @@ async function fetchCurrentPrices(isAutoUpdate = false) {
     
     try {
         console.log(`Fetching prices for: ${symbols}`);
-        const response = await fetch(`https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbols}`);
+       const response = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(`https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbols}`)}`);
         const data = await response.json();
         
         if (data.quoteResponse && data.quoteResponse.result) {
