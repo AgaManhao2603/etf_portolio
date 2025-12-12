@@ -72,16 +72,16 @@ function initializeApp() {
     // Load cached prices first for instant display
     loadCachedPrices();
     
-    // Then fetch fresh prices
+    // Render initial view IMMEDIATELY with available data
+    renderDashboard();
+    renderTransactions();
+    renderStrategy();
+    
+    // Then fetch fresh prices in background
     fetchCurrentPrices();
     
     // Setup automatic price updates
     setupAutomaticUpdates();
-    
-    // Render initial view
-    renderDashboard();
-    renderTransactions();
-    renderStrategy();
     
     // Setup event listeners
     setupEventListeners();
@@ -96,12 +96,23 @@ function loadCachedPrices() {
     const cacheTimestamp = localStorage.getItem(PRICE_UPDATE_CONFIG.cacheTimestampKey);
     
     if (cachedPrices && cacheTimestamp) {
-        const age = Date.now() - parseInt(cacheTimestamp);
-        if (age < PRICE_UPDATE_CONFIG.staleThreshold) {
-            currentPrices = JSON.parse(cachedPrices);
-            lastPriceUpdate = new Date(parseInt(cacheTimestamp));
-            console.log('Loaded cached prices from', lastPriceUpdate);
-        }
+        currentPrices = JSON.parse(cachedPrices);
+        lastPriceUpdate = new Date(parseInt(cacheTimestamp));
+        console.log('Loaded cached prices from', lastPriceUpdate);
+    } else {
+        // Use fallback prices immediately if no cache
+        currentPrices = {
+            'SOXX': 316.29,
+            'IWM': 254.81,
+            'ARKK': 83.16,
+            'VWO': 54.55,
+            'INDA': 53.37,
+            'AIA': 98.09,
+            'SCHD': 27.57,
+            'HYG': 80.74,
+            'IBIT': 52.49
+        };
+        console.log('Using fallback prices for initial display');
     }
 }
 
@@ -188,7 +199,7 @@ async function fetchCurrentPrices(isAutoUpdate = false) {
             let pricesUpdated = false;
             data.quoteResponse.result.forEach(quote => {
                 const newPrice = quote.regularMarketPrice || 0;
-                if (newPrice > 0 && newPrice !== currentPrices[quote.symbol]) {
+                if (newPrice > 0) {
                     currentPrices[quote.symbol] = newPrice;
                     pricesUpdated = true;
                 }
@@ -204,23 +215,7 @@ async function fetchCurrentPrices(isAutoUpdate = false) {
         }
     } catch (error) {
         console.warn('Unable to fetch live prices:', error);
-        
-        // Use cached prices if available, otherwise fallback
-        if (Object.keys(currentPrices).length === 0) {
-            currentPrices = {
-                'SOXX': 316.29,
-                'IWM': 254.81,
-                'ARKK': 83.16,
-                'VWO': 54.55,
-                'INDA': 53.37,
-                'AIA': 98.09,
-                'SCHD': 27.57,
-                'HYG': 80.74,
-                'IBIT': 52.49
-            };
-            lastPriceUpdate = new Date();
-            console.log('Using fallback prices');
-        }
+        // Keep using cached/fallback prices - don't update them
     } finally {
         if (isAutoUpdate) {
             hideUpdateIndicator();
@@ -254,7 +249,7 @@ function calculateMetrics() {
     portfolio.forEach(position => {
         totalInvested += position.invested;
         totalReserved += position.reserved;
-        const currentPrice = currentPrices[position.etf] || 0;
+        const currentPrice = currentPrices[position.etf] || position.avgEntry || 0;
         totalValue += position.shares * currentPrice;
     });
     
@@ -298,10 +293,15 @@ function renderDashboard() {
 // Render positions table
 function renderPositions() {
     const tbody = document.getElementById('positionsBody');
+    if (!tbody) {
+        console.error('positionsBody element not found');
+        return;
+    }
+    
     tbody.innerHTML = '';
     
     portfolio.forEach((position, index) => {
-        const currentPrice = currentPrices[position.etf] || 0;
+        const currentPrice = currentPrices[position.etf] || position.avgEntry || 0;
         const currentValue = position.shares * currentPrice;
         const gainLoss = currentValue - position.invested;
         const gainLossPercent = position.invested > 0 ? (gainLoss / position.invested) * 100 : 0;
@@ -342,6 +342,11 @@ function renderPositions() {
 // Render transactions table
 function renderTransactions() {
     const tbody = document.getElementById('transactionsBody');
+    if (!tbody) {
+        console.error('transactionsBody element not found');
+        return;
+    }
+    
     tbody.innerHTML = '';
     
     // Sort transactions by date (newest first)
@@ -373,10 +378,15 @@ function renderTransactions() {
 // Render strategy notes
 function renderStrategy() {
     const tbody = document.getElementById('strategyBody');
+    if (!tbody) {
+        console.error('strategyBody element not found');
+        return;
+    }
+    
     tbody.innerHTML = '';
     
     portfolio.forEach(position => {
-        const currentPrice = currentPrices[position.etf] || 0;
+        const currentPrice = currentPrices[position.etf] || position.avgEntry || 0;
         const priceVsEntry = position.avgEntry > 0 
             ? ((currentPrice - position.avgEntry) / position.avgEntry * 100).toFixed(2)
             : 0;
