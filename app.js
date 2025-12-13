@@ -194,7 +194,7 @@ async function fetchCurrentPrices(isAutoUpdate = false) {
     try {
         console.log(`Fetching prices for: ${symbols}`);
         
-            const response = await fetch(`https://yahoo-finance-proxy.aga-b10.workers.dev/?symbols=${symbols}`);
+        const response = await fetch(`https://yahoo-finance-proxy.aga-b10.workers.dev/?symbols=${symbols}`);
         
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
