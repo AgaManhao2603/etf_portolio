@@ -194,9 +194,7 @@ async function fetchCurrentPrices(isAutoUpdate = false) {
     try {
         console.log(`Fetching prices for: ${symbols}`);
         
-        // Use corsproxy.io - a reliable CORS proxy
-        const yahooUrl = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbols}`;
-        const response = await fetch(`https://corsproxy.io/?${encodeURIComponent(yahooUrl)}`);
+            const response = await fetch(`https://yahoo-finance-proxy.aga-b10.workers.dev/?symbols=${symbols}`);
         
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
