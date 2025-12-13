@@ -77,18 +77,17 @@ function initializeApp() {
     renderTransactions();
     renderStrategy();
     
-  // Fetch current prices - Manual refresh only
-async function fetchCurrentPrices(isAutoUpdate = false) {
-    // For now, just update the timestamp
-    lastPriceUpdate = new Date();
+    // Then fetch fresh prices in background
+    fetchCurrentPrices();
+    
+    // Setup automatic price updates
+    setupAutomaticUpdates();
+    
+    // Setup event listeners
+    setupEventListeners();
+    
+    // Update last updated time
     updateLastUpdated();
-    
-    if (isAutoUpdate) {
-        showUpdateIndicator();
-        setTimeout(() => hideUpdateIndicator(), 1000);
-    }
-    
-    console.log('Manual price refresh - update prices in code when needed');
 }
 
 // Load cached prices from localStorage
@@ -182,7 +181,7 @@ function saveTransactions() {
     localStorage.setItem('etf_transactions', JSON.stringify(transactions));
 }
 
-// Fetch current prices using Yahoo Finance API
+// Fetch current prices using Cloudflare Worker with Finnhub API
 async function fetchCurrentPrices(isAutoUpdate = false) {
     const symbols = portfolio.map(p => p.etf).join(',');
     
