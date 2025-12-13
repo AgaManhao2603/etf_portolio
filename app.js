@@ -77,17 +77,18 @@ function initializeApp() {
     renderTransactions();
     renderStrategy();
     
-    // Then fetch fresh prices in background
-    fetchCurrentPrices();
-    
-    // Setup automatic price updates
-    setupAutomaticUpdates();
-    
-    // Setup event listeners
-    setupEventListeners();
-    
-    // Update last updated time
+  // Fetch current prices - Manual refresh only
+async function fetchCurrentPrices(isAutoUpdate = false) {
+    // For now, just update the timestamp
+    lastPriceUpdate = new Date();
     updateLastUpdated();
+    
+    if (isAutoUpdate) {
+        showUpdateIndicator();
+        setTimeout(() => hideUpdateIndicator(), 1000);
+    }
+    
+    console.log('Manual price refresh - update prices in code when needed');
 }
 
 // Load cached prices from localStorage
