@@ -77,7 +77,101 @@ function initializeApp() {
     renderTransactions();
     renderStrategy();
     
-   
+    // Then fetch fresh prices in background
+    fetchCurrentPrices();
+    
+    // Setup automatic price updates
+    setupAutomaticUpdates();
+    
+    // Setup event listeners
+    setupEventListeners();
+    
+    // Update last updated time
+    updateLastUpdated();
+}
+
+// Load cached prices from localStorage
+function loadCachedPrices() {
+    const cachedPrices = localStorage.getItem(PRICE_UPDATE_CONFIG.cacheKey);
+    const cacheTimestamp = localStorage.getItem(PRICE_UPDATE_CONFIG.cacheTimestampKey);
+    
+    if (cachedPrices && cacheTimestamp) {
+        currentPrices = JSON.parse(cachedPrices);
+        lastPriceUpdate = new Date(parseInt(cacheTimestamp));
+        console.log('Loaded cached prices from', lastPriceUpdate);
+    } else {
+        // Use fallback prices immediately if no cache
+        currentPrices = {
+            'SOXX': 316.29,
+            'IWM': 254.81,
+            'ARKK': 83.16,
+            'VWO': 54.55,
+            'INDA': 53.37,
+            'AIA': 98.09,
+            'SCHD': 27.57,
+            'HYG': 80.74,
+            'IBIT': 52.49
+        };
+        console.log('Using fallback prices for initial display');
+    }
+}
+
+// Cache prices to localStorage
+function cachePrices() {
+    localStorage.setItem(PRICE_UPDATE_CONFIG.cacheKey, JSON.stringify(currentPrices));
+    localStorage.setItem(PRICE_UPDATE_CONFIG.cacheTimestampKey, Date.now().toString());
+}
+
+// Check if we're in market hours (US market: 9:30 AM - 4:00 PM ET, Mon-Fri)
+function isMarketHours() {
+    const now = new Date();
+    const day = now.getUTCDay();
+    const hours = now.getUTCHours();
+    
+    // Weekend check (0 = Sunday, 6 = Saturday)
+    if (day === 0 || day === 6) return false;
+    
+    // US Market hours in UTC: 14:30 - 21:00 (9:30 AM - 4:00 PM ET)
+    // Adjusting for daylight saving time variations
+    return hours >= 13 && hours < 22;
+}
+
+// Setup automatic price updates
+function setupAutomaticUpdates() {
+    // Clear any existing interval
+    if (priceUpdateInterval) {
+        clearInterval(priceUpdateInterval);
+    }
+    
+    // Determine update frequency based on market hours
+    const updateInterval = isMarketHours() 
+        ? PRICE_UPDATE_CONFIG.marketHoursInterval 
+        : PRICE_UPDATE_CONFIG.afterHoursInterval;
+    
+    console.log(`Setting up price updates every ${updateInterval / 1000 / 60} minutes`);
+    
+    // Set up periodic updates
+    priceUpdateInterval = setInterval(() => {
+        console.log('Automatic price update triggered');
+        fetchCurrentPrices(true);
+    }, updateInterval);
+    
+    // Also check when page becomes visible again (handles overnight scenarios)
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) {
+            const timeSinceUpdate = lastPriceUpdate 
+                ? Date.now() - lastPriceUpdate.getTime() 
+                : Infinity;
+            
+            // If more than 30 minutes since last update, fetch fresh prices
+            if (timeSinceUpdate > PRICE_UPDATE_CONFIG.staleThreshold) {
+                console.log('Page visible after long period, fetching fresh prices');
+                fetchCurrentPrices(true);
+            }
+        }
+    });
+}
+
 // Save data to localStorage
 function savePortfolio() {
     localStorage.setItem('etf_portfolio', JSON.stringify(portfolio));
@@ -99,13 +193,9 @@ async function fetchCurrentPrices(isAutoUpdate = false) {
     try {
         console.log(`Fetching prices for: ${symbols}`);
         
-        // Use yfinance proxy that handles CORS
-        const response = await fetch(`https://query2.finance.yahoo.com/v7/finance/quote?symbols=${symbols}`, {
-            method: 'GET',
-            headers: {
-                'User-Agent': 'Mozilla/5.0'
-            }
-        });
+        // Use corsproxy.io - a reliable CORS proxy
+        const yahooUrl = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbols}`;
+        const response = await fetch(`https://corsproxy.io/?${encodeURIComponent(yahooUrl)}`);
         
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
@@ -133,7 +223,7 @@ async function fetchCurrentPrices(isAutoUpdate = false) {
         }
     } catch (error) {
         console.warn('Unable to fetch live prices, using cached prices:', error.message);
-        // Keep using cached/fallback prices - they're already loaded
+        // Keep using cached/fallback prices
         if (!lastPriceUpdate) {
             lastPriceUpdate = new Date();
         }
@@ -142,6 +232,48 @@ async function fetchCurrentPrices(isAutoUpdate = false) {
             hideUpdateIndicator();
         }
     }
+}
+
+// Show/hide update indicator
+function showUpdateIndicator() {
+    const indicator = document.getElementById('updateIndicator');
+    if (indicator) {
+        indicator.style.display = 'flex';
+    }
+}
+
+function hideUpdateIndicator() {
+    const indicator = document.getElementById('updateIndicator');
+    if (indicator) {
+        setTimeout(() => {
+            indicator.style.display = 'none';
+        }, 1000);
+    }
+}
+
+// Calculate portfolio metrics
+function calculateMetrics() {
+    let totalInvested = 0;
+    let totalValue = 0;
+    let totalReserved = 0;
+    
+    portfolio.forEach(position => {
+        totalInvested += position.invested;
+        totalReserved += position.reserved;
+        const currentPrice = currentPrices[position.etf] || position.avgEntry || 0;
+        totalValue += position.shares * currentPrice;
+    });
+    
+    const totalGainLoss = totalValue - totalInvested;
+    const gainLossPercent = totalInvested > 0 ? (totalGainLoss / totalInvested) * 100 : 0;
+    
+    return {
+        totalInvested,
+        totalValue,
+        totalReserved,
+        totalGainLoss,
+        gainLossPercent
+    };
 }
 
 // Render dashboard
