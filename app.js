@@ -1,32 +1,35 @@
-// ETF Portfolio Tracker - Enhanced with Automatic Price Updates
+// ETF Portfolio Tracker - Corrected with Accurate Data
 // Features:
 // - Automatic overnight price refresh
 // - Periodic updates during market hours
 // - Smart caching to avoid rate limits
 // - Last update timestamp tracking
 
-// Initial portfolio data (from your spreadsheet)
+// Initial portfolio data (YOUR ACTUAL POSITIONS)
 const initialPortfolio = [
-    { etf: 'SOXX', shares: 107.14, avgEntry: 280.00, invested: 30000, reserved: 0, strategy: 'Semiconductors - Wait for RSI cooldown below 70.' },
-    { etf: 'IWM', shares: 30.04, avgEntry: 249.63, invested: 7500, reserved: 7500, strategy: 'Small-cap value - Buy on dips.' },
-    { etf: 'ARKK', shares: 0, avgEntry: 0, invested: 0, reserved: 20000, strategy: 'Innovation - Wait for RSI < 70, target ~$75-78 range.' },
-    { etf: 'VWO', shares: 414.46, avgEntry: 54.10, invested: 22425.26, reserved: 0, strategy: 'Emerging markets diversification.' },
-    { etf: 'INDA', shares: 140.42, avgEntry: 53.41, invested: 7500, reserved: 0, strategy: 'India growth exposure.' },
-    { etf: 'AIA', shares: 78.35, avgEntry: 95.72, invested: 7500, reserved: 0, strategy: 'Asia ex-Japan exposure.' },
-    { etf: 'SCHD', shares: 449.64, avgEntry: 27.80, invested: 12500, reserved: 0, strategy: 'Good long-term entry anytime.' },
-    { etf: 'HYG', shares: 123.92, avgEntry: 80.70, invested: 10000, reserved: 0, strategy: 'Stable high-yield bond exposure.' },
-    { etf: 'IBIT', shares: 0, avgEntry: 0, invested: 0, reserved: 70000, strategy: 'BTC retracement targets: -15%, -25%, -35%' }
+    { etf: 'SOXX', shares: 185, avgEntry: 299.48, invested: 55403, reserved: 0, strategy: 'Semiconductors - Wait for RSI cooldown below 70.' },
+    { etf: 'IWM', shares: 109, avgEntry: 252.50, invested: 27523, reserved: 7500, strategy: 'Small-cap value - Buy on dips.' },
+    { etf: 'ARKK', shares: 184, avgEntry: 80.39, invested: 14791, reserved: 20000, strategy: 'Innovation - Wait for RSI < 70, target ~$75-78 range.' },
+    { etf: 'VWO', shares: 413, avgEntry: 53.94, invested: 22277, reserved: 0, strategy: 'Emerging markets diversification.' },
+    { etf: 'INDA', shares: 140, avgEntry: 53.14, invested: 7439, reserved: 0, strategy: 'India growth exposure.' },
+    { etf: 'AIA', shares: 78, avgEntry: 95.27, invested: 7431, reserved: 0, strategy: 'Asia ex-Japan exposure.' },
+    { etf: 'SCHD', shares: 449, avgEntry: 27.68, invested: 12428, reserved: 0, strategy: 'Good long-term entry anytime.' },
+    { etf: 'HYG', shares: 123, avgEntry: 80.49, invested: 9900, reserved: 0, strategy: 'Stable high-yield bond exposure.' },
+    { etf: 'IBIT', shares: 784, avgEntry: 51.20, invested: 40140, reserved: 30000, strategy: 'BTC retracement targets: -15%, -25%, -35%' }
 ];
 
+// Initial transactions (ONLY YOUR REAL TRADES)
 const initialTransactions = [
-    { date: '2024-01-15', etf: 'SOXX', action: 'BUY', shares: 107.14, price: 280.00, total: 30000, notes: 'Initial Position' },
-    { date: '2024-01-15', etf: 'IWM', action: 'BUY', shares: 30.04, price: 249.63, total: 7500, notes: 'Initial Position' },
-    { date: '2024-01-15', etf: 'VWO', action: 'BUY', shares: 138.73, price: 54.06, total: 7500, notes: 'Initial Position' },
-    { date: '2024-06-15', etf: 'VWO', action: 'BUY', shares: 275.73, price: 54.13, total: 14925.26, notes: 'Additional Purchase' },
-    { date: '2024-01-15', etf: 'INDA', action: 'BUY', shares: 140.42, price: 53.41, total: 7500, notes: 'Initial Position' },
-    { date: '2024-01-15', etf: 'AIA', action: 'BUY', shares: 78.35, price: 95.72, total: 7500, notes: 'Initial Position' },
-    { date: '2024-01-15', etf: 'SCHD', action: 'BUY', shares: 449.64, price: 27.80, total: 12500, notes: 'Initial Position' },
-    { date: '2024-01-15', etf: 'HYG', action: 'BUY', shares: 123.92, price: 80.70, total: 10000, notes: 'Initial Position' }
+    { date: '2024-01-15', etf: 'SOXX', action: 'BUY', shares: 185, price: 299.48, total: 55403, notes: 'Initial Position' },
+    { date: '2024-01-15', etf: 'IWM', action: 'BUY', shares: 30, price: 253.83, total: 7615, notes: 'Initial Position' },
+    { date: '2024-01-15', etf: 'ARKK', action: 'BUY', shares: 184, price: 80.39, total: 14791, notes: 'Initial Position' },
+    { date: '2024-01-15', etf: 'VWO', action: 'BUY', shares: 413, price: 53.94, total: 22277, notes: 'Initial Position' },
+    { date: '2024-01-15', etf: 'INDA', action: 'BUY', shares: 140, price: 53.14, total: 7439, notes: 'Initial Position' },
+    { date: '2024-01-15', etf: 'AIA', action: 'BUY', shares: 78, price: 95.27, total: 7431, notes: 'Initial Position' },
+    { date: '2024-01-15', etf: 'SCHD', action: 'BUY', shares: 449, price: 27.68, total: 12428, notes: 'Initial Position' },
+    { date: '2024-01-15', etf: 'HYG', action: 'BUY', shares: 123, price: 80.49, total: 9900, notes: 'Initial Position' },
+    { date: '2024-01-15', etf: 'IBIT', action: 'BUY', shares: 784, price: 51.20, total: 40140, notes: 'Initial Position' },
+    { date: '2025-12-15', etf: 'IWM', action: 'BUY', shares: 79, price: 252, total: 19908, notes: 'Additional Purchase' }
 ];
 
 // State management
@@ -38,20 +41,15 @@ let priceUpdateInterval = null;
 
 // Price update configuration
 const PRICE_UPDATE_CONFIG = {
-    // Update every 5 minutes during market hours
     marketHoursInterval: 5 * 60 * 1000,
-    // Update every 2 hours outside market hours
     afterHoursInterval: 2 * 60 * 60 * 1000,
-    // Force update if data is older than 30 minutes
     staleThreshold: 30 * 60 * 1000,
-    // Cache prices in localStorage
     cacheKey: 'etf_price_cache',
     cacheTimestampKey: 'etf_price_cache_timestamp'
 };
 
 // Initialize app
 function initializeApp() {
-    // Load data from localStorage or use initial data
     const savedPortfolio = localStorage.getItem('etf_portfolio');
     const savedTransactions = localStorage.getItem('etf_transactions');
     
@@ -69,28 +67,16 @@ function initializeApp() {
         saveTransactions();
     }
     
-    // Load cached prices first for instant display
     loadCachedPrices();
-    
-    // Render initial view IMMEDIATELY with available data
     renderDashboard();
     renderTransactions();
     renderStrategy();
-    
-    // Then fetch fresh prices in background
     fetchCurrentPrices();
-    
-    // Setup automatic price updates
     setupAutomaticUpdates();
-    
-    // Setup event listeners
     setupEventListeners();
-    
-    // Update last updated time
     updateLastUpdated();
 }
 
-// Load cached prices from localStorage
 function loadCachedPrices() {
     const cachedPrices = localStorage.getItem(PRICE_UPDATE_CONFIG.cacheKey);
     const cacheTimestamp = localStorage.getItem(PRICE_UPDATE_CONFIG.cacheTimestampKey);
@@ -100,70 +86,57 @@ function loadCachedPrices() {
         lastPriceUpdate = new Date(parseInt(cacheTimestamp));
         console.log('Loaded cached prices from', lastPriceUpdate);
     } else {
-        // Use fallback prices immediately if no cache
         currentPrices = {
-            'SOXX': 316.29,
-            'IWM': 254.81,
-            'ARKK': 83.16,
-            'VWO': 54.55,
+            'SOXX': 299.48,
+            'IWM': 252.50,
+            'ARKK': 80.39,
+            'VWO': 53.94,
             'INDA': 53.37,
-            'AIA': 98.09,
-            'SCHD': 27.57,
-            'HYG': 80.74,
-            'IBIT': 52.49
+            'AIA': 95.27,
+            'SCHD': 27.68,
+            'HYG': 80.49,
+            'IBIT': 51.20
         };
         console.log('Using fallback prices for initial display');
     }
 }
 
-// Cache prices to localStorage
 function cachePrices() {
     localStorage.setItem(PRICE_UPDATE_CONFIG.cacheKey, JSON.stringify(currentPrices));
     localStorage.setItem(PRICE_UPDATE_CONFIG.cacheTimestampKey, Date.now().toString());
 }
 
-// Check if we're in market hours (US market: 9:30 AM - 4:00 PM ET, Mon-Fri)
 function isMarketHours() {
     const now = new Date();
     const day = now.getUTCDay();
     const hours = now.getUTCHours();
     
-    // Weekend check (0 = Sunday, 6 = Saturday)
     if (day === 0 || day === 6) return false;
-    
-    // US Market hours in UTC: 14:30 - 21:00 (9:30 AM - 4:00 PM ET)
-    // Adjusting for daylight saving time variations
     return hours >= 13 && hours < 22;
 }
 
-// Setup automatic price updates
 function setupAutomaticUpdates() {
-    // Clear any existing interval
     if (priceUpdateInterval) {
         clearInterval(priceUpdateInterval);
     }
     
-    // Determine update frequency based on market hours
     const updateInterval = isMarketHours() 
         ? PRICE_UPDATE_CONFIG.marketHoursInterval 
         : PRICE_UPDATE_CONFIG.afterHoursInterval;
     
     console.log(`Setting up price updates every ${updateInterval / 1000 / 60} minutes`);
     
-    // Set up periodic updates
     priceUpdateInterval = setInterval(() => {
         console.log('Automatic price update triggered');
         fetchCurrentPrices(true);
     }, updateInterval);
     
-    // Also check when page becomes visible again (handles overnight scenarios)
     document.addEventListener('visibilitychange', () => {
         if (!document.hidden) {
             const timeSinceUpdate = lastPriceUpdate 
                 ? Date.now() - lastPriceUpdate.getTime() 
                 : Infinity;
             
-            // If more than 30 minutes since last update, fetch fresh prices
             if (timeSinceUpdate > PRICE_UPDATE_CONFIG.staleThreshold) {
                 console.log('Page visible after long period, fetching fresh prices');
                 fetchCurrentPrices(true);
@@ -172,7 +145,6 @@ function setupAutomaticUpdates() {
     });
 }
 
-// Save data to localStorage
 function savePortfolio() {
     localStorage.setItem('etf_portfolio', JSON.stringify(portfolio));
 }
@@ -181,11 +153,9 @@ function saveTransactions() {
     localStorage.setItem('etf_transactions', JSON.stringify(transactions));
 }
 
-// Fetch current prices using Cloudflare Worker with Finnhub API
 async function fetchCurrentPrices(isAutoUpdate = false) {
     const symbols = portfolio.map(p => p.etf).join(',');
     
-    // Show update indicator
     if (isAutoUpdate) {
         showUpdateIndicator();
     }
@@ -221,7 +191,6 @@ async function fetchCurrentPrices(isAutoUpdate = false) {
         }
     } catch (error) {
         console.warn('Unable to fetch live prices, using cached prices:', error.message);
-        // Keep using cached/fallback prices
         if (!lastPriceUpdate) {
             lastPriceUpdate = new Date();
         }
@@ -232,7 +201,6 @@ async function fetchCurrentPrices(isAutoUpdate = false) {
     }
 }
 
-// Show/hide update indicator
 function showUpdateIndicator() {
     const indicator = document.getElementById('updateIndicator');
     if (indicator) {
@@ -249,7 +217,6 @@ function hideUpdateIndicator() {
     }
 }
 
-// Calculate portfolio metrics
 function calculateMetrics() {
     let totalInvested = 0;
     let totalValue = 0;
@@ -274,11 +241,9 @@ function calculateMetrics() {
     };
 }
 
-// Render dashboard
 function renderDashboard() {
     const metrics = calculateMetrics();
     
-    // Update summary cards
     document.getElementById('totalValue').textContent = formatCurrency(metrics.totalValue);
     document.getElementById('totalInvested').textContent = formatCurrency(metrics.totalInvested);
     document.getElementById('reservedCapital').textContent = formatCurrency(metrics.totalReserved);
@@ -295,11 +260,9 @@ function renderDashboard() {
     gainPercentElement.textContent = `${changePercent}%`;
     gainPercentElement.className = metrics.totalGainLoss >= 0 ? 'positive' : 'negative';
     
-    // Render positions
     renderPositions();
 }
 
-// Render positions table
 function renderPositions() {
     const tbody = document.getElementById('positionsBody');
     if (!tbody) {
@@ -348,7 +311,6 @@ function renderPositions() {
     });
 }
 
-// Render transactions table
 function renderTransactions() {
     const tbody = document.getElementById('transactionsBody');
     if (!tbody) {
@@ -358,7 +320,6 @@ function renderTransactions() {
     
     tbody.innerHTML = '';
     
-    // Sort transactions by date (newest first)
     const sortedTransactions = [...transactions].sort((a, b) => new Date(b.date) - new Date(a.date));
     
     sortedTransactions.forEach((transaction, index) => {
@@ -384,7 +345,6 @@ function renderTransactions() {
     });
 }
 
-// Render strategy notes
 function renderStrategy() {
     const tbody = document.getElementById('strategyBody');
     if (!tbody) {
@@ -415,7 +375,6 @@ function renderStrategy() {
     });
 }
 
-// Format currency
 function formatCurrency(amount) {
     return new Intl.NumberFormat('en-US', {
         style: 'currency',
@@ -425,7 +384,6 @@ function formatCurrency(amount) {
     }).format(amount);
 }
 
-// Format date
 function formatDate(dateString) {
     return new Date(dateString).toLocaleDateString('en-US', {
         year: 'numeric',
@@ -434,7 +392,6 @@ function formatDate(dateString) {
     });
 }
 
-// Update last updated timestamp
 function updateLastUpdated() {
     const element = document.getElementById('lastUpdated');
     if (element && lastPriceUpdate) {
@@ -455,11 +412,9 @@ function updateLastUpdated() {
         element.textContent = `Last updated: ${timeAgo}`;
     }
     
-    // Update again in 1 minute
     setTimeout(updateLastUpdated, 60000);
 }
 
-// Open transaction modal
 function openTransactionModal(etf = '', action = 'BUY') {
     const modal = document.getElementById('transactionModal');
     const form = document.getElementById('transactionForm');
@@ -475,12 +430,10 @@ function openTransactionModal(etf = '', action = 'BUY') {
     modal.style.display = 'flex';
 }
 
-// Close transaction modal
 function closeTransactionModal() {
     document.getElementById('transactionModal').style.display = 'none';
 }
 
-// Add transaction
 function addTransaction(event) {
     event.preventDefault();
     
@@ -506,24 +459,19 @@ function addTransaction(event) {
     transactions.push(transaction);
     saveTransactions();
     
-    // Update portfolio
     updatePortfolio(etf, action, shares, price, total);
     
-    // Refresh views
     renderDashboard();
     renderTransactions();
     renderStrategy();
     
-    // Close modal
     closeTransactionModal();
 }
 
-// Update portfolio based on transaction
 function updatePortfolio(etf, action, shares, price, total) {
     let position = portfolio.find(p => p.etf === etf);
     
     if (!position) {
-        // Create new position
         position = {
             etf,
             shares: 0,
@@ -542,7 +490,6 @@ function updatePortfolio(etf, action, shares, price, total) {
         position.shares = newTotalShares;
         position.invested = newTotalInvested;
         
-        // Reduce reserved capital
         if (position.reserved >= total) {
             position.reserved -= total;
         } else {
@@ -563,13 +510,11 @@ function updatePortfolio(etf, action, shares, price, total) {
     savePortfolio();
 }
 
-// Delete transaction
 function deleteTransaction(index) {
     if (confirm('Are you sure you want to delete this transaction?')) {
         transactions.splice(index, 1);
         saveTransactions();
         
-        // Recalculate entire portfolio from scratch
         recalculatePortfolio();
         
         renderDashboard();
@@ -578,12 +523,9 @@ function deleteTransaction(index) {
     }
 }
 
-// Recalculate portfolio from transactions
 function recalculatePortfolio() {
-    // Reset all positions
     portfolio = [...initialPortfolio];
     
-    // Replay all transactions
     transactions.forEach(t => {
         updatePortfolio(t.etf, t.action, t.shares, t.price, t.total);
     });
@@ -591,9 +533,7 @@ function recalculatePortfolio() {
     savePortfolio();
 }
 
-// Setup event listeners
 function setupEventListeners() {
-    // Tab switching
     document.querySelectorAll('.tab').forEach(tab => {
         tab.addEventListener('click', () => {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -605,17 +545,14 @@ function setupEventListeners() {
         });
     });
     
-    // Modal close on background click
     document.getElementById('transactionModal').addEventListener('click', (e) => {
         if (e.target.id === 'transactionModal') {
             closeTransactionModal();
         }
     });
     
-    // Form submission
     document.getElementById('transactionForm').addEventListener('submit', addTransaction);
     
-    // Manual refresh button
     const refreshBtn = document.getElementById('refreshPrices');
     if (refreshBtn) {
         refreshBtn.addEventListener('click', () => {
@@ -624,7 +561,6 @@ function setupEventListeners() {
     }
 }
 
-// Initialize when DOM is ready
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initializeApp);
 } else {
