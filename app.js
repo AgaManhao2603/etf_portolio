@@ -8,30 +8,29 @@
 // Initial portfolio data (YOUR ACTUAL POSITIONS)
 const initialPortfolio = [
     { etf: 'SOXX', shares: 185, avgEntry: 299.48, invested: 55403, reserved: 0, strategy: 'Semiconductors - Wait for RSI cooldown below 70.' },
-    { etf: 'IWM', shares: 109, avgEntry: 252.50, invested: 27523, reserved: 7500, strategy: 'Small-cap value - Buy on dips.' },
-    { etf: 'ARKK', shares: 184, avgEntry: 80.39, invested: 14791, reserved: 20000, strategy: 'Innovation - Wait for RSI < 70, target ~$75-78 range.' },
+    { etf: 'IWM', shares: 109, avgEntry: 252.50, invested: 27523, reserved: 0, strategy: 'Small-cap value - Buy on dips.' },
+    { etf: 'ARKK', shares: 184, avgEntry: 80.39, invested: 14791, reserved: 0, strategy: 'Innovation - Wait for RSI < 70, target ~$75-78 range.' },
     { etf: 'VWO', shares: 413, avgEntry: 53.94, invested: 22277, reserved: 0, strategy: 'Emerging markets diversification.' },
     { etf: 'INDA', shares: 140, avgEntry: 53.14, invested: 7439, reserved: 0, strategy: 'India growth exposure.' },
     { etf: 'AIA', shares: 78, avgEntry: 95.27, invested: 7431, reserved: 0, strategy: 'Asia ex-Japan exposure.' },
     { etf: 'SCHD', shares: 449, avgEntry: 27.68, invested: 12428, reserved: 0, strategy: 'Good long-term entry anytime.' },
     { etf: 'HYG', shares: 123, avgEntry: 80.49, invested: 9900, reserved: 0, strategy: 'Stable high-yield bond exposure.' },
-    { etf: 'IBIT', shares: 784, avgEntry: 51.20, invested: 40140, reserved: 30000, strategy: 'BTC retracement targets: -15%, -25%, -35%' }
+    { etf: 'IBIT', shares: 784, avgEntry: 51.20, invested: 40140, reserved: 0, strategy: 'BTC retracement targets: -15%, -25%, -35%' }
 ];
 
 // Initial transactions (ONLY YOUR REAL TRADES)
 const initialTransactions = [
-    { date: '2024-01-15', etf: 'SOXX', action: 'BUY', shares: 185, price: 299.48, total: 55403, notes: 'Initial Position' },
-    { date: '2024-01-15', etf: 'IWM', action: 'BUY', shares: 30, price: 253.83, total: 7615, notes: 'Initial Position' },
-    { date: '2024-01-15', etf: 'ARKK', action: 'BUY', shares: 184, price: 80.39, total: 14791, notes: 'Initial Position' },
-    { date: '2024-01-15', etf: 'VWO', action: 'BUY', shares: 413, price: 53.94, total: 22277, notes: 'Initial Position' },
-    { date: '2024-01-15', etf: 'INDA', action: 'BUY', shares: 140, price: 53.14, total: 7439, notes: 'Initial Position' },
-    { date: '2024-01-15', etf: 'AIA', action: 'BUY', shares: 78, price: 95.27, total: 7431, notes: 'Initial Position' },
-    { date: '2024-01-15', etf: 'SCHD', action: 'BUY', shares: 449, price: 27.68, total: 12428, notes: 'Initial Position' },
-    { date: '2024-01-15', etf: 'HYG', action: 'BUY', shares: 123, price: 80.49, total: 9900, notes: 'Initial Position' },
-    { date: '2024-01-15', etf: 'IBIT', action: 'BUY', shares: 784, price: 51.20, total: 40140, notes: 'Initial Position' },
+    { date: '2024-12-01', etf: 'SOXX', action: 'BUY', shares: 185, price: 299.48, total: 55403, notes: 'Initial Position' },
+    { date: '2024-12-01', etf: 'IWM', action: 'BUY', shares: 30, price: 253.83, total: 7615, notes: 'Initial Position' },
+    { date: '2024-12-01', etf: 'ARKK', action: 'BUY', shares: 184, price: 80.39, total: 14791, notes: 'Initial Position' },
+    { date: '2024-12-01', etf: 'VWO', action: 'BUY', shares: 413, price: 53.94, total: 22277, notes: 'Initial Position' },
+    { date: '2024-12-01', etf: 'INDA', action: 'BUY', shares: 140, price: 53.14, total: 7439, notes: 'Initial Position' },
+    { date: '2024-12-01', etf: 'AIA', action: 'BUY', shares: 78, price: 95.27, total: 7431, notes: 'Initial Position' },
+    { date: '2024-12-01', etf: 'SCHD', action: 'BUY', shares: 449, price: 27.68, total: 12428, notes: 'Initial Position' },
+    { date: '2024-12-01', etf: 'HYG', action: 'BUY', shares: 123, price: 80.49, total: 9900, notes: 'Initial Position' },
+    { date: '2024-12-01', etf: 'IBIT', action: 'BUY', shares: 784, price: 51.20, total: 40140, notes: 'Initial Position' },
     { date: '2025-12-15', etf: 'IWM', action: 'BUY', shares: 79, price: 252, total: 19908, notes: 'Additional Purchase' }
 ];
-
 // State management
 let portfolio = [];
 let transactions = [];
