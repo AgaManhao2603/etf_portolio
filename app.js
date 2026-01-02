@@ -22,7 +22,8 @@ const initialPortfolio = [
 const initialTransactions = [
     { date: '2024-12-01', etf: 'SOXX', action: 'BUY', shares: 185, price: 299.48, total: 55403, notes: 'Initial Position' },
     { date: '2024-12-01', etf: 'IWM', action: 'BUY', shares: 30, price: 253.83, total: 7615, notes: 'Initial Position' },
-    { date: '2024-12-01', etf: 'ARKK', action: 'BUY', shares: 184, price: 80.39, total: 14791, notes: 'Initial Position' },
+    { date: '2024-12-01', etf: 'ARKK', action: 'BUY', shares: 184, price: 80.39, total: 14791, notes: 'Initial Position - Tranche 1' },
+    { date: '2024-12-15', etf: 'ARKK', action: 'BUY', shares: 256, price: 78.00, total: 19968, notes: 'Additional Purchase - Tranche 2' },
     { date: '2024-12-01', etf: 'VWO', action: 'BUY', shares: 413, price: 53.94, total: 22277, notes: 'Initial Position' },
     { date: '2024-12-01', etf: 'INDA', action: 'BUY', shares: 140, price: 53.14, total: 7439, notes: 'Initial Position' },
     { date: '2024-12-01', etf: 'AIA', action: 'BUY', shares: 78, price: 95.27, total: 7431, notes: 'Initial Position' },
