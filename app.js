@@ -9,7 +9,7 @@
 const initialPortfolio = [
     { etf: 'SOXX', shares: 185, avgEntry: 299.48, invested: 55403, reserved: 0, strategy: 'Semiconductors - Wait for RSI cooldown below 70.' },
     { etf: 'IWM', shares: 109, avgEntry: 252.50, invested: 27523, reserved: 0, strategy: 'Small-cap value - Buy on dips.' },
-    { etf: 'ARKK', shares: 184, avgEntry: 80.39, invested: 14791, reserved: 0, strategy: 'Innovation - Wait for RSI < 70, target ~$75-78 range.' },
+    { etf: 'ARKK', shares: 440, avgEntry: 79.20, invested: 34759, reserved: 0, strategy: 'Innovation - Wait for RSI < 70, target ~$75-78 range.' },
     { etf: 'VWO', shares: 413, avgEntry: 53.94, invested: 22277, reserved: 0, strategy: 'Emerging markets diversification.' },
     { etf: 'INDA', shares: 140, avgEntry: 53.14, invested: 7439, reserved: 0, strategy: 'India growth exposure.' },
     { etf: 'AIA', shares: 78, avgEntry: 95.27, invested: 7431, reserved: 0, strategy: 'Asia ex-Japan exposure.' },
