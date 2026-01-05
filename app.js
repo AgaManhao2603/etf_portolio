@@ -1,24 +1,13 @@
-// ETF Portfolio Tracker - Corrected with Accurate Data
+// ETF Portfolio Tracker - FIXED VERSION
+// Bug fix: Removed duplicate initialPortfolio - transactions are now the single source of truth
 // Features:
 // - Automatic overnight price refresh
 // - Periodic updates during market hours
 // - Smart caching to avoid rate limits
 // - Last update timestamp tracking
 
-// CORRECTED TRANSACTIONS - Based on actual broker statement (Jan 5, 2026)
-// This represents the complete transaction history to match current positions
-
-const initialPortfolio = [
-    { etf: 'SOXX', shares: 185, avgEntry: 290.50, invested: 53743, reserved: 0, strategy: 'Semiconductors - Core growth position' },
-    { etf: 'IBIT', shares: 1409, avgEntry: 49.76, invested: 70120, reserved: 0, strategy: 'Bitcoin exposure - Scaled accumulation' },
-    { etf: 'ARKK', shares: 566, avgEntry: 79.50, invested: 44997, reserved: 0, strategy: 'Innovation - Multi-tranche entry' },
-    { etf: 'IWM', shares: 189, avgEntry: 250.70, invested: 47382, reserved: 0, strategy: 'Small-cap value' },
-    { etf: 'IAU', shares: 370, avgEntry: 81.72, invested: 30236, reserved: 0, strategy: 'Gold hedge for dollar weakness' },
-    { etf: 'SLV', shares: 305, avgEntry: 65.53, invested: 19987, reserved: 0, strategy: 'Silver hedge for dollar weakness' },
-    { etf: 'VWO', shares: 413, avgEntry: 54.28, invested: 22418, reserved: 0, strategy: 'Emerging markets diversification' },
-    { etf: 'AIA', shares: 78, avgEntry: 95.18, invested: 7436, reserved: 0, strategy: 'Asia ex-Japan exposure' },
-    { etf: 'SCHD', shares: 449, avgEntry: 27.86, invested: 12507, reserved: 0, strategy: 'Dividend growth exposure' }
-];
+// SINGLE SOURCE OF TRUTH: Transactions only
+// Portfolio is calculated from these transactions
 
 const initialTransactions = [
     // === INITIAL POSITIONS (January 2024) ===
@@ -53,51 +42,22 @@ const initialTransactions = [
     { date: '2025-01-03', etf: 'IWM', action: 'BUY', shares: 80, price: 248.70, total: 19896, notes: 'IWM Scale T3 - Lower target fill' }
 ];
 
-/* 
-TRANSACTION SUMMARY BY ETF:
+// Strategy notes for each ETF (separate from position calculations)
+const etfStrategies = {
+    'SOXX': 'Semiconductors - Core growth position',
+    'IBIT': 'Bitcoin exposure - Scaled accumulation',
+    'ARKK': 'Innovation - Multi-tranche entry',
+    'IWM': 'Small-cap value',
+    'IAU': 'Gold hedge for dollar weakness',
+    'SLV': 'Silver hedge for dollar weakness',
+    'VWO': 'Emerging markets diversification',
+    'AIA': 'Asia ex-Japan exposure',
+    'SCHD': 'Dividend growth exposure',
+    'VTI': 'Total market exposure',
+    'HYG': 'High yield bonds',
+    'INDA': 'India exposure'
+};
 
-SOXX (185 shares, $290.50 avg):
-- Jan 2024: 107 @ $280 = $29,960
-- Dec 2024: 48 @ $310 = $14,880
-- Dec 2024: 30 @ $305 = $9,150
-Total: $53,990 (broker shows $53,743 - slight rounding difference)
-
-IBIT (1,409 shares, $49.76 avg):
-- Dec 2024: 784 @ $51 = $39,984
-- Jan 2025: 625 @ $48 = $30,000
-Total: $69,984 (broker shows $70,120 - includes additional shares)
-
-ARKK (566 shares, $79.50 avg):
-- Dec 2024: 184 @ $81.50 = $14,996
-- Dec 2024: 256 @ $78.00 = $19,968
-- Jan 2025: 126 @ $78.50 = $9,891
-Total: $44,855 (broker shows $44,997 - matches closely)
-
-IWM (189 shares, $250.70 avg):
-- Dec 2024: 30 @ $253.83 = $7,615
-- Dec 2024: 79 @ $249.00 = $19,671
-- Jan 2025: 80 @ $248.70 = $19,896
-Total: $47,182 (broker shows $47,382 - close match)
-
-IAU (370 shares, $81.72 avg):
-- Dec 2024: 370 @ $81.72 = $30,236 ✓ Perfect match
-
-SLV (305 shares, $65.53 avg):
-- Dec 2024: 305 @ $65.53 = $19,987 ✓ Perfect match
-
-VWO (413 shares, $54.28 avg):
-- Jan 2024: 139 @ $54.06 = $7,515
-- Jun 2024: 274 @ $54.38 = $14,900
-Total: $22,415 (broker shows $22,418 - essentially perfect)
-
-AIA (78 shares, $95.18 avg):
-- Jan 2024: 78 @ $95.18 = $7,424 ✓ Perfect match
-
-SCHD (449 shares, $27.86 avg):
-- Jan 2024: 449 @ $27.86 = $12,509 ✓ Perfect match
-
-TOTAL DEPLOYED: ~$308,500 (matches broker total of $308,826)
-*/
 // State management
 let portfolio = [];
 let transactions = [];
@@ -116,15 +76,7 @@ const PRICE_UPDATE_CONFIG = {
 
 // Initialize app
 function initializeApp() {
-    const savedPortfolio = localStorage.getItem('etf_portfolio');
     const savedTransactions = localStorage.getItem('etf_transactions');
-    
-    if (savedPortfolio) {
-        portfolio = JSON.parse(savedPortfolio);
-    } else {
-        portfolio = [...initialPortfolio];
-        savePortfolio();
-    }
     
     if (savedTransactions) {
         transactions = JSON.parse(savedTransactions);
@@ -132,6 +84,9 @@ function initializeApp() {
         transactions = [...initialTransactions];
         saveTransactions();
     }
+    
+    // ALWAYS calculate portfolio from transactions - this is the fix!
+    recalculatePortfolioFromTransactions();
     
     loadCachedPrices();
     renderDashboard();
@@ -161,7 +116,10 @@ function loadCachedPrices() {
             'AIA': 95.27,
             'SCHD': 27.68,
             'HYG': 80.49,
-            'IBIT': 51.20
+            'IBIT': 51.20,
+            'IAU': 81.72,
+            'SLV': 65.53,
+            'VTI': 338.40
         };
         console.log('Using fallback prices for initial display');
     }
@@ -525,7 +483,8 @@ function addTransaction(event) {
     transactions.push(transaction);
     saveTransactions();
     
-    updatePortfolio(etf, action, shares, price, total);
+    // Recalculate entire portfolio from scratch
+    recalculatePortfolioFromTransactions();
     
     renderDashboard();
     renderTransactions();
@@ -534,69 +493,72 @@ function addTransaction(event) {
     closeTransactionModal();
 }
 
-function updatePortfolio(etf, action, shares, price, total) {
-    let position = portfolio.find(p => p.etf === etf);
+function recalculatePortfolioFromTransactions() {
+    // Start with empty portfolio
+    portfolio = [];
     
-    if (!position) {
-        position = {
-            etf,
-            shares: 0,
-            avgEntry: 0,
-            invested: 0,
-            reserved: 0,
-            strategy: 'Add your strategy notes here'
-        };
-        portfolio.push(position);
-    }
-    
-    if (action === 'BUY') {
-        const newTotalShares = position.shares + shares;
-        const newTotalInvested = position.invested + total;
-        position.avgEntry = newTotalInvested / newTotalShares;
-        position.shares = newTotalShares;
-        position.invested = newTotalInvested;
+    // Build portfolio from ALL transactions
+    transactions.forEach(t => {
+        let position = portfolio.find(p => p.etf === t.etf);
         
-        if (position.reserved >= total) {
-            position.reserved -= total;
-        } else {
-            position.reserved = 0;
+        if (!position) {
+            position = {
+                etf: t.etf,
+                shares: 0,
+                avgEntry: 0,
+                invested: 0,
+                reserved: 0,
+                strategy: etfStrategies[t.etf] || 'Add your strategy notes here'
+            };
+            portfolio.push(position);
         }
-    } else if (action === 'SELL') {
-        const soldValue = shares * position.avgEntry;
-        position.shares -= shares;
-        position.invested -= soldValue;
         
-        if (position.shares <= 0) {
-            position.shares = 0;
-            position.avgEntry = 0;
-            position.invested = 0;
+        if (t.action === 'BUY') {
+            const newTotalShares = position.shares + t.shares;
+            const newTotalInvested = position.invested + t.total;
+            position.avgEntry = newTotalShares > 0 ? newTotalInvested / newTotalShares : 0;
+            position.shares = newTotalShares;
+            position.invested = newTotalInvested;
+        } else if (t.action === 'SELL') {
+            const soldValue = t.shares * position.avgEntry;
+            position.shares -= t.shares;
+            position.invested -= soldValue;
+            
+            if (position.shares <= 0) {
+                position.shares = 0;
+                position.avgEntry = 0;
+                position.invested = 0;
+            }
         }
-    }
+    });
     
     savePortfolio();
 }
 
 function deleteTransaction(index) {
     if (confirm('Are you sure you want to delete this transaction?')) {
-        transactions.splice(index, 1);
+        // Get the sorted view to match what user sees
+        const sortedTransactions = [...transactions].sort((a, b) => new Date(b.date) - new Date(a.date));
+        const transactionToDelete = sortedTransactions[index];
+        
+        // Find the actual index in the unsorted array
+        const actualIndex = transactions.findIndex(t => 
+            t.date === transactionToDelete.date && 
+            t.etf === transactionToDelete.etf && 
+            t.shares === transactionToDelete.shares &&
+            t.price === transactionToDelete.price
+        );
+        
+        transactions.splice(actualIndex, 1);
         saveTransactions();
         
-        recalculatePortfolio();
+        // Recalculate entire portfolio from remaining transactions
+        recalculatePortfolioFromTransactions();
         
         renderDashboard();
         renderTransactions();
         renderStrategy();
     }
-}
-
-function recalculatePortfolio() {
-    portfolio = [...initialPortfolio];
-    
-    transactions.forEach(t => {
-        updatePortfolio(t.etf, t.action, t.shares, t.price, t.total);
-    });
-    
-    savePortfolio();
 }
 
 function setupEventListeners() {
