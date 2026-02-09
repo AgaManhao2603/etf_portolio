@@ -18,23 +18,14 @@ const CONFIG = {
     }
 };
 
-// INITIAL TRANSACTIONS - Same as before
+// INITIAL TRANSACTIONS - Cleaned up (removed sold positions)
 const initialTransactions = [
     // === INITIAL POSITIONS (January 2024) ===
     { date: '2024-01-15', etf: 'SOXX', action: 'BUY', shares: 107, price: 280.00, total: 29960, notes: 'Initial Position - Entry at dip' },
-    { date: '2024-01-15', etf: 'VWO', action: 'BUY', shares: 139, price: 54.06, total: 7515, notes: 'Initial EM Position - Tranche 1' },
-    { date: '2024-01-15', etf: 'AIA', action: 'BUY', shares: 78, price: 95.18, total: 7424, notes: 'Initial Asia Position' },
     { date: '2024-01-15', etf: 'SCHD', action: 'BUY', shares: 449, price: 27.86, total: 12509, notes: 'Initial Dividend Position' },
     
-    // === VWO SCALING (June 2024) ===
-    { date: '2024-06-15', etf: 'VWO', action: 'BUY', shares: 274, price: 54.38, total: 14900, notes: 'VWO Scale - Tranche 2' },
-    
-    // === DECEMBER 2024 DEPLOYMENT - First Wave ===
+    // === DECEMBER 2024 DEPLOYMENT ===
     { date: '2024-12-13', etf: 'SOXX', action: 'BUY', shares: 48, price: 310.00, total: 14880, notes: 'SOXX Scale T2 - Fibonacci entry' },
-    { date: '2024-12-13', etf: 'IBIT', action: 'BUY', shares: 784, price: 51.00, total: 39984, notes: 'IBIT Initial - BTC dip entry' },
-    { date: '2024-12-13', etf: 'ARKK', action: 'BUY', shares: 184, price: 81.50, total: 14996, notes: 'ARKK Initial - Breakout entry' },
-    
-    // === DECEMBER 2024 DEPLOYMENT - Scaling Wave ===
     { date: '2024-12-15', etf: 'SOXX', action: 'BUY', shares: 30, price: 305.00, total: 9150, notes: 'SOXX Scale T3 - Consolidation' },
     { date: '2024-12-15', etf: 'IWM', action: 'BUY', shares: 30, price: 253.83, total: 7615, notes: 'IWM Initial - First entry' },
     
@@ -43,25 +34,24 @@ const initialTransactions = [
     { date: '2024-12-29', etf: 'SLV', action: 'BUY', shares: 305, price: 65.53, total: 19987, notes: 'Silver - 0.618 Fib entry, worst day in 5 years' },
     
     // === DECEMBER 30-31 OVERNIGHT FILLS (Market Weakness) ===
-    { date: '2024-12-30', etf: 'ARKK', action: 'BUY', shares: 256, price: 78.00, total: 19968, notes: 'ARKK Scale T2 - Overnight fill during Dow weakness' },
     { date: '2024-12-30', etf: 'IWM', action: 'BUY', shares: 79, price: 249.00, total: 19671, notes: 'IWM Scale T2 - Limit order filled' },
     
     // === JANUARY 2025 MAJOR SCALING (Week of Jan 5) ===
-    { date: '2025-01-02', etf: 'ARKK', action: 'BUY', shares: 126, price: 78.50, total: 9891, notes: 'ARKK Scale T3 - Additional accumulation' },
-    { date: '2025-01-02', etf: 'IBIT', action: 'BUY', shares: 625, price: 48.00, total: 30000, notes: 'IBIT Scale T2 - Target $48 hit perfectly' },
-    { date: '2025-01-03', etf: 'IWM', action: 'BUY', shares: 80, price: 248.70, total: 19896, notes: 'IWM Scale T3 - Lower target fill' }
+    { date: '2025-01-03', etf: 'IWM', action: 'BUY', shares: 80, price: 248.70, total: 19896, notes: 'IWM Scale T3 - Lower target fill' },
+    
+    // === ADDITIONAL POSITIONS (JANUARY 2025) ===
+    { date: '2025-01-06', etf: 'IAU', action: 'BUY', shares: 479, price: 95.08, total: 45544, notes: 'Gold - Additional accumulation' },
+    { date: '2025-01-06', etf: 'SLV', action: 'BUY', shares: 1353, price: 99.57, total: 134716, notes: 'Silver - Major position scaling' },
+    { date: '2025-01-06', etf: 'SCHD', action: 'BUY', shares: 2158, price: 27.96, total: 60338, notes: 'SCHD - Large scale-up' },
+    { date: '2025-01-06', etf: 'VTI', action: 'BUY', shares: 212, price: 338.40, total: 71741, notes: 'VTI - New total market position' }
 ];
 
 // Strategy notes for each ETF
 const etfStrategies = {
     'SOXX': 'Semiconductors - Core growth position',
-    'IBIT': 'Bitcoin exposure - Scaled accumulation',
-    'ARKK': 'Innovation - Multi-tranche entry',
     'IWM': 'Small-cap value',
     'IAU': 'Gold hedge for dollar weakness',
     'SLV': 'Silver hedge for dollar weakness',
-    'VWO': 'Emerging markets diversification',
-    'AIA': 'Asia ex-Japan exposure',
     'SCHD': 'Dividend growth exposure',
     'VTI': 'Total market exposure',
     'HYG': 'High yield bonds',
@@ -231,13 +221,7 @@ async function loadCachedPrices() {
         currentPrices = {
             'SOXX': 348.51,
             'IWM': 265.02,
-            'ARKK': 70.41,
-            'VWO': 57.26,
-            'INDA': 53.37,
-            'AIA': 109.77,
             'SCHD': 31.47,
-            'HYG': 80.49,
-            'IBIT': 39.68,
             'IAU': 93.24,
             'SLV': 70.19,
             'VTI': 340.96
