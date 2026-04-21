@@ -384,12 +384,10 @@ function renderPositions() {
         const currentPrice = currentPrices[position.etf] || position.avgEntry || 0;
         const currentValue = position.shares * currentPrice;
         
-        // Gain/Loss = market value vs cost basis of current shares
-        const gainLoss = currentValue - position.costBasis;
-        const gainLossPercent = position.costBasis > 0 ? (gainLoss / position.costBasis) * 100 : 0;
-        
-        // Net invested in this position (buys - sells)
-        const netInvested = position.totalBuys - position.totalSells;
+        // Gain/Loss = current holdings vs original investment
+        // Sale proceeds are banked/redeployed — not counted here
+        const gainLoss = currentValue - position.totalBuys;
+        const gainLossPercent = position.totalBuys > 0 ? (gainLoss / position.totalBuys) * 100 : 0;
         
         const row = document.createElement('tr');
         row.innerHTML = `
@@ -397,7 +395,7 @@ function renderPositions() {
             <td>${position.shares.toFixed(2)}</td>
             <td>${formatCurrency(position.avgEntry)}</td>
             <td class="current-price">${formatCurrency(currentPrice)}</td>
-            <td>${formatCurrency(netInvested)}</td>
+            <td>${formatCurrency(position.totalBuys)}</td>
             <td>${formatCurrency(currentValue)}</td>
             <td class="${gainLoss >= 0 ? 'positive' : 'negative'}">
                 ${formatCurrency(gainLoss)}<br>
