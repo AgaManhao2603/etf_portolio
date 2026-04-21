@@ -5,6 +5,9 @@
 // 3. Dual persistence (cloud + localStorage fallback)
 // 4. Automatic data recovery and sync
 // 5. Export/import for manual backups
+// 6. FIXED: Sell logic preserves original invested amount
+// 7. FIXED: Realized cash from sales tracked and included in total value
+// 8. FIXED: P&L = (unrealized + realized) - total invested
 
 // CONFIGURATION
 const CONFIG = {
@@ -231,7 +234,7 @@ async function loadCachedPrices() {
 }
 
 // ============================================================================
-// PORTFOLIO CALCULATION
+// PORTFOLIO CALCULATION (FIXED SELL LOGIC)
 // ============================================================================
 
 function recalculatePortfolioFromTransactions() {
@@ -245,7 +248,10 @@ function recalculatePortfolioFromTransactions() {
                 etf: t.etf,
                 shares: 0,
                 avgEntry: 0,
-                invested: 0,
+                invested: 0,         // Total capital deployed (BUYs only, never reduced) - for performance
+                costBasis: 0,        // Cost basis of CURRENTLY HELD shares (reduced on sells) - for avgEntry
+                realizedCash: 0,     // Cash received from sells
+                realizedPL: 0,       // Profit/loss on closed portions
                 reserved: 0,
                 strategy: etfStrategies[t.etf] || 'Add strategy notes'
             };
@@ -253,48 +259,79 @@ function recalculatePortfolioFromTransactions() {
         }
         
         if (t.action === 'BUY') {
-            const newTotalShares = position.shares + t.shares;
-            const newTotalInvested = position.invested + t.total;
-            position.avgEntry = newTotalShares > 0 ? newTotalInvested / newTotalShares : 0;
-            position.shares = newTotalShares;
-            position.invested = newTotalInvested;
+            position.shares += t.shares;
+            position.invested += t.total;    // Performance tracking (never reduced)
+            position.costBasis += t.total;   // Current holdings cost (reduced on sells)
+            // avgEntry based on costBasis of current shares, not total invested
+            position.avgEntry = position.shares > 0 ? position.costBasis / position.shares : 0;
         } else if (t.action === 'SELL') {
-            const soldValue = t.shares * position.avgEntry;
-            position.shares -= t.shares;
-            position.invested -= soldValue;
+            // Cost basis of sold shares (using average cost method)
+            const costBasisOfSold = t.shares * position.avgEntry;
+            // Sale proceeds = shares × sale price (stored in t.total)
+            const saleProceeds = t.total;
             
+            // Track realized cash and P&L
+            position.realizedCash += saleProceeds;
+            position.realizedPL += (saleProceeds - costBasisOfSold);
+            
+            // Reduce share count and cost basis of current holdings
+            position.shares -= t.shares;
+            position.costBasis -= costBasisOfSold;
+            
+            // IMPORTANT: Do NOT reduce position.invested
+            // invested stays as total capital deployed for performance measurement
+            
+            // avgEntry stays the same (average cost method)
+            // Only reset if fully sold out
             if (position.shares <= 0) {
                 position.shares = 0;
+                position.costBasis = 0;
                 position.avgEntry = 0;
-                position.invested = 0;
             }
         }
     });
     
     console.log('Portfolio recalculated:', portfolio.length, 'positions');
+    portfolio.forEach(p => {
+        if (p.realizedCash > 0) {
+            console.log(`  ${p.etf}: Realized cash $${p.realizedCash.toFixed(2)}, P&L $${p.realizedPL.toFixed(2)}`);
+        }
+    });
 }
 
 // ============================================================================
-// DASHBOARD RENDERING (WITH ZERO-POSITION FILTERING)
+// DASHBOARD RENDERING (WITH REALIZED CASH TRACKING)
 // ============================================================================
 
 function calculateMetrics() {
     let totalInvested = 0;
-    let totalValue = 0;
+    let totalUnrealizedValue = 0;
+    let totalRealizedCash = 0;
+    let totalRealizedPL = 0;
     let totalReserved = 0;
     
     portfolio.forEach(position => {
         totalInvested += position.invested;
         totalReserved += position.reserved;
+        totalRealizedCash += position.realizedCash;
+        totalRealizedPL += position.realizedPL;
+        
         const currentPrice = currentPrices[position.etf] || position.avgEntry || 0;
-        totalValue += position.shares * currentPrice;
+        totalUnrealizedValue += position.shares * currentPrice;
     });
     
+    // Total value = what you'd have if you liquidated everything + cash already received
+    const totalValue = totalUnrealizedValue + totalRealizedCash;
+    
+    // Total P&L = total value - total capital deployed
     const totalGainLoss = totalValue - totalInvested;
     const gainLossPercent = totalInvested > 0 ? (totalGainLoss / totalInvested) * 100 : 0;
     
     return {
         totalInvested,
+        totalUnrealizedValue,
+        totalRealizedCash,
+        totalRealizedPL,
         totalValue,
         totalReserved,
         totalGainLoss,
@@ -305,10 +342,23 @@ function calculateMetrics() {
 function renderDashboard() {
     const metrics = calculateMetrics();
     
+    // Total Value now includes realized cash from sales
     document.getElementById('totalValue').textContent = formatCurrency(metrics.totalValue);
     document.getElementById('totalInvested').textContent = formatCurrency(metrics.totalInvested);
     document.getElementById('reservedCapital').textContent = formatCurrency(metrics.totalReserved);
     document.getElementById('totalGainLoss').textContent = formatCurrency(metrics.totalGainLoss);
+    
+    // Update realized cash display if element exists
+    const realizedCashEl = document.getElementById('realizedCash');
+    if (realizedCashEl) {
+        realizedCashEl.textContent = formatCurrency(metrics.totalRealizedCash);
+    }
+    
+    const realizedPLEl = document.getElementById('realizedPL');
+    if (realizedPLEl) {
+        realizedPLEl.textContent = formatCurrency(metrics.totalRealizedPL);
+        realizedPLEl.className = metrics.totalRealizedPL >= 0 ? 'positive' : 'negative';
+    }
     
     // Count only non-zero positions
     const activePositions = portfolio.filter(p => p.shares > 0).length;
@@ -333,13 +383,18 @@ function renderPositions() {
     
     tbody.innerHTML = '';
     
-    // FILTER OUT ZERO POSITIONS - This is the key change!
+    // FILTER OUT ZERO POSITIONS
     const activePositions = portfolio.filter(p => p.shares > 0);
     
     activePositions.forEach((position) => {
         const currentPrice = currentPrices[position.etf] || position.avgEntry || 0;
         const currentValue = position.shares * currentPrice;
-        const gainLoss = currentValue - position.invested;
+        
+        // Total position value = unrealized + any realized cash from partial sells
+        const totalPositionValue = currentValue + position.realizedCash;
+        
+        // Gain/Loss relative to original investment
+        const gainLoss = totalPositionValue - position.invested;
         const gainLossPercent = position.invested > 0 ? (gainLoss / position.invested) * 100 : 0;
         
         const row = document.createElement('tr');
@@ -353,6 +408,7 @@ function renderPositions() {
             <td class="${gainLoss >= 0 ? 'positive' : 'negative'}">
                 ${formatCurrency(gainLoss)}<br>
                 <small>(${gainLossPercent.toFixed(2)}%)</small>
+                ${position.realizedCash > 0 ? `<br><small class="realized-tag">Incl. ${formatCurrency(position.realizedCash)} realized</small>` : ''}
             </td>
             <td>${formatCurrency(position.reserved)}</td>
             <td class="actions">
@@ -451,6 +507,16 @@ async function addTransaction(event) {
     const notes = document.getElementById('transactionNotes').value;
     
     const total = shares * price;
+    
+    // Validation for sells: check we have enough shares
+    if (action === 'SELL') {
+        const position = portfolio.find(p => p.etf === etf);
+        if (!position || position.shares < shares) {
+            const available = position ? position.shares : 0;
+            showNotification(`Cannot sell ${shares} shares of ${etf}. Only ${available} available.`, 'error');
+            return;
+        }
+    }
     
     const transaction = {
         date,
@@ -715,7 +781,7 @@ function exportPortfolioData() {
     const exportData = {
         transactions: transactions,
         exportDate: new Date().toISOString(),
-        version: '2.0-cloud'
+        version: '2.1-fixed-sell-logic'
     };
     
     const dataStr = JSON.stringify(exportData, null, 2);
