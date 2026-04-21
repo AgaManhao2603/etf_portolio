@@ -1,19 +1,13 @@
 // ETF Portfolio Tracker - CLOUD STORAGE VERSION
-// Major improvements:
-// 1. Cloud storage via window.storage API (syncs across devices)
-// 2. Filters out zero-balance positions from display
-// 3. Dual persistence (cloud + localStorage fallback)
-// 4. Automatic data recovery and sync
-// 5. Export/import for manual backups
-// 6. FIXED: Sell logic preserves original invested amount
-// 7. FIXED: Realized cash from sales tracked and included in total value
-// 8. FIXED: P&L = (unrealized + realized) - total invested
+// Versioned data storage: bumping DATA_VERSION forces clean reinitialize
+// so code logic changes never conflict with stale stored data
 
 // CONFIGURATION
 const CONFIG = {
-    CLOUD_STORAGE_KEY: 'etf_transactions',
+    DATA_VERSION: 3,                              // Bump this when code logic changes
+    CLOUD_STORAGE_KEY: 'etf_portfolio_v3',        // Versioned key prevents stale data
     CLOUD_PRICES_KEY: 'etf_current_prices',
-    LOCAL_BACKUP_KEY: 'etf_transactions_local_backup',
+    LOCAL_BACKUP_KEY: 'etf_portfolio_local_v3',   // Versioned local key too
     PRICE_UPDATE: {
         marketHoursInterval: 5 * 60 * 1000,      // 5 minutes during market hours
         afterHoursInterval: 2 * 60 * 60 * 1000,  // 2 hours after hours
@@ -21,7 +15,7 @@ const CONFIG = {
     }
 };
 
-// INITIAL TRANSACTIONS - Cleaned up (removed sold positions)
+// INITIAL TRANSACTIONS - Complete history including sells
 const initialTransactions = [
     // === INITIAL POSITIONS (January 2024) ===
     { date: '2024-01-15', etf: 'SOXX', action: 'BUY', shares: 107, price: 280.00, total: 29960, notes: 'Initial Position - Entry at dip' },
@@ -46,7 +40,10 @@ const initialTransactions = [
     { date: '2025-01-06', etf: 'IAU', action: 'BUY', shares: 479, price: 95.08, total: 45544, notes: 'Gold - Additional accumulation' },
     { date: '2025-01-06', etf: 'SLV', action: 'BUY', shares: 1353, price: 99.57, total: 134716, notes: 'Silver - Major position scaling' },
     { date: '2025-01-06', etf: 'SCHD', action: 'BUY', shares: 2158, price: 27.96, total: 60338, notes: 'SCHD - Large scale-up' },
-    { date: '2025-01-06', etf: 'VTI', action: 'BUY', shares: 212, price: 338.40, total: 71741, notes: 'VTI - New total market position' }
+    { date: '2025-01-06', etf: 'VTI', action: 'BUY', shares: 212, price: 338.40, total: 71741, notes: 'VTI - New total market position' },
+    
+    // === APRIL 2025 REBALANCING ===
+    { date: '2025-04-20', etf: 'SOXX', action: 'SELL', shares: 50, price: 418.24, total: 20912, notes: 'Partial take-profit - redeploy to IAU' }
 ];
 
 // Strategy notes for each ETF
@@ -74,61 +71,85 @@ let cloudStorageAvailable = typeof window.storage !== 'undefined';
 // ============================================================================
 
 async function saveTransactionsToCloud() {
+    // Wrap transactions with version for future-proofing
+    const payload = JSON.stringify({
+        version: CONFIG.DATA_VERSION,
+        transactions: transactions
+    });
+
     if (!cloudStorageAvailable) {
         console.warn('Cloud storage not available, using localStorage only');
-        localStorage.setItem(CONFIG.LOCAL_BACKUP_KEY, JSON.stringify(transactions));
+        localStorage.setItem(CONFIG.LOCAL_BACKUP_KEY, payload);
         return;
     }
 
     try {
         const result = await window.storage.set(
             CONFIG.CLOUD_STORAGE_KEY,
-            JSON.stringify(transactions),
-            false // personal data, not shared
+            payload,
+            false
         );
         
         if (result) {
-            console.log('✅ Transactions saved to cloud storage');
-            // Also save to localStorage as backup
-            localStorage.setItem(CONFIG.LOCAL_BACKUP_KEY, JSON.stringify(transactions));
+            console.log('✅ Transactions saved to cloud (v' + CONFIG.DATA_VERSION + ')');
+            localStorage.setItem(CONFIG.LOCAL_BACKUP_KEY, payload);
         } else {
             console.error('❌ Cloud storage save failed');
         }
     } catch (error) {
         console.error('Cloud storage error:', error);
-        // Fallback to localStorage
-        localStorage.setItem(CONFIG.LOCAL_BACKUP_KEY, JSON.stringify(transactions));
+        localStorage.setItem(CONFIG.LOCAL_BACKUP_KEY, payload);
     }
 }
 
 async function loadTransactionsFromCloud() {
-    if (!cloudStorageAvailable) {
-        console.warn('Cloud storage not available, using localStorage');
-        const localData = localStorage.getItem(CONFIG.LOCAL_BACKUP_KEY);
-        return localData ? JSON.parse(localData) : null;
+    let raw = null;
+
+    if (cloudStorageAvailable) {
+        try {
+            const result = await window.storage.get(CONFIG.CLOUD_STORAGE_KEY, false);
+            if (result && result.value) {
+                raw = result.value;
+                console.log('✅ Data loaded from cloud storage');
+            }
+        } catch (error) {
+            console.warn('Cloud storage read error:', error);
+        }
     }
 
+    // Fallback to localStorage
+    if (!raw) {
+        raw = localStorage.getItem(CONFIG.LOCAL_BACKUP_KEY);
+        if (raw) console.log('ℹ️ Data loaded from localStorage backup');
+    }
+
+    if (!raw) return null;
+
     try {
-        const result = await window.storage.get(CONFIG.CLOUD_STORAGE_KEY, false);
+        const parsed = JSON.parse(raw);
         
-        if (result && result.value) {
-            console.log('✅ Transactions loaded from cloud storage');
-            const cloudTransactions = JSON.parse(result.value);
-            
-            // Also update localStorage backup
-            localStorage.setItem(CONFIG.LOCAL_BACKUP_KEY, JSON.stringify(cloudTransactions));
-            
-            return cloudTransactions;
-        } else {
-            console.log('ℹ️ No cloud data found, checking localStorage backup');
-            const localData = localStorage.getItem(CONFIG.LOCAL_BACKUP_KEY);
-            return localData ? JSON.parse(localData) : null;
+        // Handle versioned format: { version, transactions }
+        if (parsed.version && parsed.transactions) {
+            if (parsed.version === CONFIG.DATA_VERSION) {
+                console.log(`✅ Data version ${parsed.version} matches code`);
+                return parsed.transactions;
+            } else {
+                console.warn(`⚠️ Stale data version ${parsed.version}, code expects ${CONFIG.DATA_VERSION}. Reinitializing.`);
+                return null; // Force reinitialize from initialTransactions
+            }
         }
+        
+        // Handle OLD unversioned format (plain array of transactions)
+        // This is the stale data from previous code versions — discard it
+        if (Array.isArray(parsed)) {
+            console.warn('⚠️ Found unversioned data from old code. Reinitializing.');
+            return null;
+        }
+
+        return null;
     } catch (error) {
-        console.error('Cloud storage read error:', error);
-        // Fallback to localStorage
-        const localData = localStorage.getItem(CONFIG.LOCAL_BACKUP_KEY);
-        return localData ? JSON.parse(localData) : null;
+        console.error('Data parse error:', error);
+        return null;
     }
 }
 
@@ -174,17 +195,19 @@ async function loadPricesFromCloud() {
 
 async function initializeApp() {
     showLoadingIndicator('Loading portfolio data...');
+    console.log(`ETF Tracker starting (data version ${CONFIG.DATA_VERSION})`);
     
-    // Load transactions from cloud or fallback
+    // Load transactions — returns null if stored data is stale/missing
     const savedTransactions = await loadTransactionsFromCloud();
     
     if (savedTransactions && savedTransactions.length > 0) {
         transactions = savedTransactions;
         console.log(`Loaded ${transactions.length} transactions from storage`);
     } else {
+        // Fresh start from hardcoded history
         transactions = [...initialTransactions];
         await saveTransactionsToCloud();
-        console.log('Initialized with default transactions');
+        console.log(`Initialized with ${transactions.length} default transactions (v${CONFIG.DATA_VERSION})`);
     }
     
     // Calculate portfolio from transactions
@@ -751,7 +774,7 @@ function exportPortfolioData() {
     const exportData = {
         transactions: transactions,
         exportDate: new Date().toISOString(),
-        version: '2.1-fixed-sell-logic'
+        version: '3.0-versioned-storage'
     };
     
     const dataStr = JSON.stringify(exportData, null, 2);
