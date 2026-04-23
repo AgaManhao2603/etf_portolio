@@ -71,7 +71,6 @@ let cloudStorageAvailable = typeof window.storage !== 'undefined';
 // ============================================================================
 
 async function saveTransactionsToCloud() {
-    // Wrap transactions with version for future-proofing
     const payload = JSON.stringify({
         version: CONFIG.DATA_VERSION,
         transactions: transactions
@@ -117,7 +116,6 @@ async function loadTransactionsFromCloud() {
         }
     }
 
-    // Fallback to localStorage
     if (!raw) {
         raw = localStorage.getItem(CONFIG.LOCAL_BACKUP_KEY);
         if (raw) console.log('ℹ️ Data loaded from localStorage backup');
@@ -128,19 +126,16 @@ async function loadTransactionsFromCloud() {
     try {
         const parsed = JSON.parse(raw);
         
-        // Handle versioned format: { version, transactions }
         if (parsed.version && parsed.transactions) {
             if (parsed.version === CONFIG.DATA_VERSION) {
                 console.log(`✅ Data version ${parsed.version} matches code`);
                 return parsed.transactions;
             } else {
                 console.warn(`⚠️ Stale data version ${parsed.version}, code expects ${CONFIG.DATA_VERSION}. Reinitializing.`);
-                return null; // Force reinitialize from initialTransactions
+                return null;
             }
         }
         
-        // Handle OLD unversioned format (plain array of transactions)
-        // This is the stale data from previous code versions — discard it
         if (Array.isArray(parsed)) {
             console.warn('⚠️ Found unversioned data from old code. Reinitializing.');
             return null;
@@ -197,41 +192,33 @@ async function initializeApp() {
     showLoadingIndicator('Loading portfolio data...');
     console.log(`ETF Tracker starting (data version ${CONFIG.DATA_VERSION})`);
     
-    // Load transactions — returns null if stored data is stale/missing
     const savedTransactions = await loadTransactionsFromCloud();
     
     if (savedTransactions && savedTransactions.length > 0) {
         transactions = savedTransactions;
         console.log(`Loaded ${transactions.length} transactions from storage`);
     } else {
-        // Fresh start from hardcoded history
         transactions = [...initialTransactions];
         await saveTransactionsToCloud();
         console.log(`Initialized with ${transactions.length} default transactions (v${CONFIG.DATA_VERSION})`);
     }
     
-    // Calculate portfolio from transactions
     recalculatePortfolioFromTransactions();
     
-    // Load cached prices
     await loadCachedPrices();
     
-    // Render UI
     renderDashboard();
     renderTransactions();
     renderStrategy();
     
-    // Fetch fresh prices
     await fetchCurrentPrices();
     
-    // Setup automatic updates
     setupAutomaticUpdates();
     setupEventListeners();
     updateLastUpdated();
     
     hideLoadingIndicator();
     
-    // Show storage status
     showStorageStatus();
 }
 
@@ -243,7 +230,6 @@ async function loadCachedPrices() {
         lastPriceUpdate = new Date(cloudPrices.timestamp);
         console.log('Loaded cached prices from cloud:', lastPriceUpdate);
     } else {
-        // Fallback prices
         currentPrices = {
             'SOXX': 348.51,
             'IWM': 265.02,
@@ -259,10 +245,18 @@ async function loadCachedPrices() {
 // ============================================================================
 // PORTFOLIO CALCULATION
 // ============================================================================
-// Model: Total Value = market value of holdings (shares × price)
-//        Total Invested = net capital in portfolio (all buys − all sells)
-//        When you sell SOXX and buy IAU, invested stays the same (sell + buy cancel out)
-//        P&L = Total Value − Total Invested (how much portfolio has grown)
+// Model:
+//   costBasis  = cost of shares you STILL HOLD (reduced on sells)
+//   totalBuys  = sum of all buy amounts (never reduced)
+//   totalSells = sum of all sell proceeds
+//
+// Per-row display:
+//   Invested   = costBasis (what your remaining shares cost you)
+//   P&L        = currentValue − costBasis (unrealized gain/loss on holdings)
+//
+// Dashboard totals:
+//   Total Invested = totalBuys − totalSells (net capital in portfolio)
+//   Total P&L      = totalMarketValue − totalInvested
 
 function recalculatePortfolioFromTransactions() {
     portfolio = [];
@@ -275,10 +269,9 @@ function recalculatePortfolioFromTransactions() {
                 etf: t.etf,
                 shares: 0,
                 avgEntry: 0,
-                costBasis: 0,        // Cost basis of currently held shares (for avgEntry calc)
+                costBasis: 0,        // Cost basis of currently held shares
                 totalBuys: 0,        // Sum of all buy amounts for this ETF
                 totalSells: 0,       // Sum of all sell proceeds for this ETF
-                reserved: 0,
                 strategy: etfStrategies[t.etf] || 'Add strategy notes'
             };
             portfolio.push(position);
@@ -294,7 +287,7 @@ function recalculatePortfolioFromTransactions() {
             const costBasisOfSold = t.shares * position.avgEntry;
             position.shares -= t.shares;
             position.costBasis -= costBasisOfSold;
-            position.totalSells += t.total;  // Track sale proceeds
+            position.totalSells += t.total;
             
             // avgEntry stays the same (average cost method)
             if (position.shares <= 0) {
@@ -316,12 +309,10 @@ function calculateMetrics() {
     let totalBuys = 0;
     let totalSells = 0;
     let totalMarketValue = 0;
-    let totalReserved = 0;
     
     portfolio.forEach(position => {
         totalBuys += position.totalBuys;
         totalSells += position.totalSells;
-        totalReserved += position.reserved;
         
         const currentPrice = currentPrices[position.etf] || position.avgEntry || 0;
         totalMarketValue += position.shares * currentPrice;
@@ -340,7 +331,6 @@ function calculateMetrics() {
     return {
         totalInvested,
         totalValue,
-        totalReserved,
         totalGainLoss,
         gainLossPercent
     };
@@ -351,7 +341,6 @@ function renderDashboard() {
     
     document.getElementById('totalValue').textContent = formatCurrency(metrics.totalValue);
     document.getElementById('totalInvested').textContent = formatCurrency(metrics.totalInvested);
-    document.getElementById('reservedCapital').textContent = formatCurrency(metrics.totalReserved);
     document.getElementById('totalGainLoss').textContent = formatCurrency(metrics.totalGainLoss);
     
     // Count only non-zero positions
@@ -377,17 +366,20 @@ function renderPositions() {
     
     tbody.innerHTML = '';
     
-    // FILTER OUT ZERO POSITIONS
     const activePositions = portfolio.filter(p => p.shares > 0);
     
     activePositions.forEach((position) => {
         const currentPrice = currentPrices[position.etf] || position.avgEntry || 0;
         const currentValue = position.shares * currentPrice;
         
-        // Gain/Loss = current holdings vs original investment
-        // Sale proceeds are banked/redeployed — not counted here
-        const gainLoss = currentValue - position.totalBuys;
-        const gainLossPercent = position.totalBuys > 0 ? (gainLoss / position.totalBuys) * 100 : 0;
+        // =====================================================================
+        // FIX: Use costBasis (cost of shares still held), NOT totalBuys
+        // totalBuys includes cost of shares already sold — comparing that
+        // against value of remaining shares understates P&L
+        // =====================================================================
+        const invested = position.costBasis;
+        const gainLoss = currentValue - invested;
+        const gainLossPercent = invested > 0 ? (gainLoss / invested) * 100 : 0;
         
         const row = document.createElement('tr');
         row.innerHTML = `
@@ -395,13 +387,12 @@ function renderPositions() {
             <td>${position.shares.toFixed(2)}</td>
             <td>${formatCurrency(position.avgEntry)}</td>
             <td class="current-price">${formatCurrency(currentPrice)}</td>
-            <td>${formatCurrency(position.totalBuys)}</td>
+            <td>${formatCurrency(invested)}</td>
             <td>${formatCurrency(currentValue)}</td>
             <td class="${gainLoss >= 0 ? 'positive' : 'negative'}">
                 ${formatCurrency(gainLoss)}<br>
                 <small>(${gainLossPercent.toFixed(2)}%)</small>
             </td>
-            <td>${formatCurrency(position.reserved)}</td>
             <td class="actions">
                 <button class="btn-small btn-primary" onclick="openTransactionModal('${position.etf}', 'BUY')">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -428,7 +419,6 @@ function renderStrategy() {
     
     tbody.innerHTML = '';
     
-    // FILTER OUT ZERO POSITIONS HERE TOO
     const activePositions = portfolio.filter(p => p.shares > 0);
     
     activePositions.forEach(position => {
@@ -446,7 +436,6 @@ function renderStrategy() {
             <td class="${parseFloat(priceVsEntry) >= 0 ? 'positive' : 'negative'}">
                 ${priceVsEntry}%
             </td>
-            <td>${formatCurrency(position.reserved)}</td>
         `;
         tbody.appendChild(row);
     });
@@ -499,7 +488,6 @@ async function addTransaction(event) {
     
     const total = shares * price;
     
-    // Validation for sells: check we have enough shares
     if (action === 'SELL') {
         const position = portfolio.find(p => p.etf === etf);
         if (!position || position.shares < shares) {
@@ -827,7 +815,6 @@ async function importPortfolioData(event) {
 // ============================================================================
 
 function setupEventListeners() {
-    // Tab switching
     document.querySelectorAll('.tab').forEach(tab => {
         tab.addEventListener('click', () => {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -839,29 +826,24 @@ function setupEventListeners() {
         });
     });
     
-    // Modal close on background click
     document.getElementById('transactionModal').addEventListener('click', (e) => {
         if (e.target.id === 'transactionModal') {
             closeTransactionModal();
         }
     });
     
-    // Transaction form submission
     document.getElementById('transactionForm').addEventListener('submit', addTransaction);
     
-    // Refresh button
     const refreshBtn = document.getElementById('refreshPrices');
     if (refreshBtn) {
         refreshBtn.addEventListener('click', () => fetchCurrentPrices(true));
     }
     
-    // Export button
     const exportBtn = document.getElementById('exportData');
     if (exportBtn) {
         exportBtn.addEventListener('click', exportPortfolioData);
     }
     
-    // Import button
     const importInput = document.getElementById('importData');
     if (importInput) {
         importInput.addEventListener('change', importPortfolioData);
@@ -878,7 +860,6 @@ if (document.readyState === 'loading') {
     initializeApp();
 }
 
-// Make functions available globally
 window.openTransactionModal = openTransactionModal;
 window.closeTransactionModal = closeTransactionModal;
 window.deleteTransaction = deleteTransaction;
