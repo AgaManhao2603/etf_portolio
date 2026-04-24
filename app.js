@@ -4,10 +4,10 @@
 
 // CONFIGURATION
 const CONFIG = {
-    DATA_VERSION: 4,                              // Bumped: fixes invested display + undeployed cash
-    CLOUD_STORAGE_KEY: 'etf_portfolio_v4',        // Versioned key prevents stale data
+    DATA_VERSION: 3,                              // Keep at 3 to preserve stored transactions
+    CLOUD_STORAGE_KEY: 'etf_portfolio_v3',        // Must match existing stored data
     CLOUD_PRICES_KEY: 'etf_current_prices',
-    LOCAL_BACKUP_KEY: 'etf_portfolio_local_v4',   // Versioned local key too
+    LOCAL_BACKUP_KEY: 'etf_portfolio_local_v3',   // Must match existing stored data
     PRICE_UPDATE: {
         marketHoursInterval: 5 * 60 * 1000,      // 5 minutes during market hours
         afterHoursInterval: 2 * 60 * 60 * 1000,  // 2 hours after hours
@@ -351,39 +351,40 @@ function recalculatePortfolioFromTransactions() {
 function calculateMetrics() {
     let totalBuysAll = 0;
     let totalSellsAll = 0;
+    let totalRedeployedAll = 0;
     let totalMarketValue = 0;
     
     portfolio.forEach(position => {
         if (typeof position === 'object' && position.etf) {
             totalBuysAll += position.totalBuys;
             totalSellsAll += position.totalSells;
+            totalRedeployedAll += (position.redeployed || 0);
             
             const currentPrice = currentPrices[position.etf] || position.avgEntry || 0;
             totalMarketValue += position.shares * currentPrice;
         }
     });
     
-    // Net capital deployed = money put in minus money taken out
-    // This is what you'd see reflected in your bank account
-    const netInvested = totalBuysAll - totalSellsAll;
-    
-    // Portfolio value = market value of current holdings
-    const totalValue = totalMarketValue;
-    
-    // P&L = holdings value vs net capital deployed
-    const totalGainLoss = totalValue - netInvested;
-    const gainLossPercent = netInvested > 0 ? 
-        (totalGainLoss / netInvested) * 100 : 0;
-    
-    // Undeployed cash = informational only (sale proceeds waiting to be redeployed)
     const undeployedCash = portfolio.undeployedCash || 0;
     
+    // Total Invested = gross total of all buys (matches sum of per-row Invested)
+    const totalInvested = totalBuysAll;
+    
+    // Total Value = market value of holdings + cash on sideline
+    const totalValue = totalMarketValue + undeployedCash;
+    
+    // Original capital = what came from your pocket (excludes redeployed "house money")
+    // P&L measures true return on your original capital
+    const originalCapital = totalBuysAll - totalRedeployedAll;
+    const totalGainLoss = totalValue - originalCapital;
+    const gainLossPercent = originalCapital > 0 ? 
+        (totalGainLoss / originalCapital) * 100 : 0;
+    
     return {
-        totalBuysAll,       // gross total of all buys (matches per-row sum)
-        totalSellsAll,      // gross total of all sells
-        netInvested,        // buys - sells (dashboard "Total Invested")
-        totalValue,         // market value of holdings
+        totalInvested,      // gross total of all buys (matches per-row sum)
+        totalValue,         // market value + undeployed cash
         undeployedCash,     // cash from sales not yet redeployed
+        originalCapital,    // out-of-pocket capital (buys minus redeployed)
         totalGainLoss,
         gainLossPercent
     };
@@ -393,7 +394,7 @@ function renderDashboard() {
     const metrics = calculateMetrics();
     
     document.getElementById('totalValue').textContent = formatCurrency(metrics.totalValue);
-    document.getElementById('totalInvested').textContent = formatCurrency(metrics.netInvested);
+    document.getElementById('totalInvested').textContent = formatCurrency(metrics.totalInvested);
     document.getElementById('totalGainLoss').textContent = formatCurrency(metrics.totalGainLoss);
     
     // Undeployed cash display (informational — cash from sales waiting to be redeployed)
@@ -436,14 +437,13 @@ function renderPositions() {
         // =====================================================================
         // INVESTED = totalBuys (total capital in this ETF, including redeployed)
         //
-        // P&L = current value vs ORIGINAL CAPITAL only
-        // Redeployed cash (from sale proceeds) is "house money" and excluded
-        // from P&L calculation so it reflects true performance of your capital.
+        // P&L = current value vs full invested amount
+        // This correctly reflects per-share performance: if current price is
+        // below avg entry, P&L is negative. Redeployed tag is informational.
         // =====================================================================
         const invested = position.totalBuys;
-        const originalCapital = position.totalBuys - position.redeployed;
-        const gainLoss = currentValue - originalCapital;
-        const gainLossPercent = originalCapital > 0 ? (gainLoss / originalCapital) * 100 : 0;
+        const gainLoss = currentValue - invested;
+        const gainLossPercent = invested > 0 ? (gainLoss / invested) * 100 : 0;
         
         // Show small tags for sells and redeployed cash
         const sellTag = position.totalSells > 0 
