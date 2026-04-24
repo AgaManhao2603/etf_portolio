@@ -4,10 +4,10 @@
 
 // CONFIGURATION
 const CONFIG = {
-    DATA_VERSION: 3,                              // Keep at 3 to preserve stored transactions
-    CLOUD_STORAGE_KEY: 'etf_portfolio_v3',        // Must match existing stored data
+    DATA_VERSION: 4,                              // Bumped: IAU buy now in initialTransactions
+    CLOUD_STORAGE_KEY: 'etf_portfolio_v4',
     CLOUD_PRICES_KEY: 'etf_current_prices',
-    LOCAL_BACKUP_KEY: 'etf_portfolio_local_v3',   // Must match existing stored data
+    LOCAL_BACKUP_KEY: 'etf_portfolio_local_v4',
     PRICE_UPDATE: {
         marketHoursInterval: 5 * 60 * 1000,      // 5 minutes during market hours
         afterHoursInterval: 2 * 60 * 60 * 1000,  // 2 hours after hours
@@ -43,7 +43,8 @@ const initialTransactions = [
     { date: '2025-01-06', etf: 'VTI', action: 'BUY', shares: 212, price: 338.40, total: 71741, notes: 'VTI - New total market position' },
     
     // === APRIL 2025 REBALANCING ===
-    { date: '2025-04-20', etf: 'SOXX', action: 'SELL', shares: 50, price: 418.24, total: 20912, notes: 'Partial take-profit - redeploy to IAU' }
+    { date: '2025-04-20', etf: 'SOXX', action: 'SELL', shares: 50, price: 418.24, total: 20912, notes: 'Partial take-profit - redeploy to IAU' },
+    { date: '2026-04-24', etf: 'IAU', action: 'BUY', shares: 113, price: 88.18, total: 9964.34, notes: 'Bought the dip - redeployed from SOXX sale' }
 ];
 
 // Strategy notes for each ETF
