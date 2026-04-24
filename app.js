@@ -434,17 +434,16 @@ function renderPositions() {
         const currentValue = position.shares * currentPrice;
         
         // =====================================================================
-        // INVESTED = totalBuys (original investment, never reduced by sells)
-        // This is the performance benchmark — what you actually put in.
+        // INVESTED = totalBuys (total capital in this ETF, including redeployed)
         //
-        // P&L = current market value of remaining shares − original investment
-        // After a partial sell this may look low/negative because cash was
-        // taken off the table. That cash appears in "Undeployed Cash" on the
-        // dashboard until it's redeployed into another ETF.
+        // P&L = current value vs ORIGINAL CAPITAL only
+        // Redeployed cash (from sale proceeds) is "house money" and excluded
+        // from P&L calculation so it reflects true performance of your capital.
         // =====================================================================
         const invested = position.totalBuys;
-        const gainLoss = currentValue - invested;
-        const gainLossPercent = invested > 0 ? (gainLoss / invested) * 100 : 0;
+        const originalCapital = position.totalBuys - position.redeployed;
+        const gainLoss = currentValue - originalCapital;
+        const gainLossPercent = originalCapital > 0 ? (gainLoss / originalCapital) * 100 : 0;
         
         // Show small tags for sells and redeployed cash
         const sellTag = position.totalSells > 0 
