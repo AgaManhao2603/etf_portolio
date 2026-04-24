@@ -4,10 +4,10 @@
 
 // CONFIGURATION
 const CONFIG = {
-    DATA_VERSION: 3,                              // Bump this when code logic changes
-    CLOUD_STORAGE_KEY: 'etf_portfolio_v3',        // Versioned key prevents stale data
+    DATA_VERSION: 4,                              // Bumped: fixes invested display + undeployed cash
+    CLOUD_STORAGE_KEY: 'etf_portfolio_v4',        // Versioned key prevents stale data
     CLOUD_PRICES_KEY: 'etf_current_prices',
-    LOCAL_BACKUP_KEY: 'etf_portfolio_local_v3',   // Versioned local key too
+    LOCAL_BACKUP_KEY: 'etf_portfolio_local_v4',   // Versioned local key too
     PRICE_UPDATE: {
         marketHoursInterval: 5 * 60 * 1000,      // 5 minutes during market hours
         afterHoursInterval: 2 * 60 * 60 * 1000,  // 2 hours after hours
@@ -215,6 +215,7 @@ async function initializeApp() {
     
     setupAutomaticUpdates();
     setupEventListeners();
+    fixMobileInputs();
     updateLastUpdated();
     
     hideLoadingIndicator();
@@ -245,22 +246,57 @@ async function loadCachedPrices() {
 // ============================================================================
 // PORTFOLIO CALCULATION
 // ============================================================================
-// Model:
+//
+// ACCOUNTING MODEL:
+//
+//   totalBuys  = sum of all buy amounts for this ETF (never reduced on sells)
+//                This is the "Original Investment" — your per-ETF benchmark.
+//
 //   costBasis  = cost of shares you STILL HOLD (reduced on sells)
-//   totalBuys  = sum of all buy amounts (never reduced)
-//   totalSells = sum of all sell proceeds
+//                This drives avgEntry calculation only.
 //
-// Per-row display:
-//   Invested   = costBasis (what your remaining shares cost you)
-//   P&L        = currentValue − costBasis (unrealized gain/loss on holdings)
+//   totalSells = sum of all sell proceeds for this ETF
 //
-// Dashboard totals:
-//   Total Invested = totalBuys − totalSells (net capital in portfolio)
-//   Total P&L      = totalMarketValue − totalInvested
+// PER-ROW DISPLAY:
+//   Invested   = totalBuys  (original investment, never changes)
+//   P&L        = currentValue − totalBuys
+//   Sell tag   = shows cash received from sales for this ETF
+//
+// DASHBOARD TOTALS:
+//   Total Invested = sum(totalBuys) − sum(totalSells) = net capital deployed
+//   Portfolio Value = sum(shares × price) = market value of holdings
+//   P&L            = Portfolio Value − Total Invested
+//   Undeployed Cash = sale proceeds not yet redeployed (informational)
+//
+// NOTE: Per-row invested totals will exceed dashboard "Total Invested"
+// by the amount of sale proceeds. This is expected — rows show gross
+// investment per ETF, dashboard shows net capital in the market.
 
 function recalculatePortfolioFromTransactions() {
     portfolio = [];
     
+    // Track sell/buy chronology to calculate undeployed cash
+    let totalSellProceeds = 0;
+    let buysAfterFirstSell = 0;
+    let firstSellOccurred = false;
+    
+    // First pass: process all transactions chronologically
+    const sortedTx = [...transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
+    
+    sortedTx.forEach(t => {
+        if (t.action === 'SELL') {
+            firstSellOccurred = true;
+            totalSellProceeds += t.total;
+        } else if (t.action === 'BUY' && firstSellOccurred) {
+            buysAfterFirstSell += t.total;
+        }
+    });
+    
+    // Undeployed cash = sell proceeds not yet redeployed into new buys
+    // If you sold $21K and then bought $10K of IAU, undeployed = $11K
+    portfolio.undeployedCash = Math.max(0, totalSellProceeds - buysAfterFirstSell);
+    
+    // Second pass: build positions
     transactions.forEach(t => {
         let position = portfolio.find(p => p.etf === t.etf);
         
@@ -270,8 +306,8 @@ function recalculatePortfolioFromTransactions() {
                 shares: 0,
                 avgEntry: 0,
                 costBasis: 0,        // Cost basis of currently held shares
-                totalBuys: 0,        // Sum of all buy amounts for this ETF
-                totalSells: 0,       // Sum of all sell proceeds for this ETF
+                totalBuys: 0,        // Sum of all buy amounts (original investment)
+                totalSells: 0,       // Sum of all sell proceeds
                 strategy: etfStrategies[t.etf] || 'Add strategy notes'
             };
             portfolio.push(position);
@@ -299,6 +335,7 @@ function recalculatePortfolioFromTransactions() {
     });
     
     console.log('Portfolio recalculated:', portfolio.length, 'positions');
+    console.log('Undeployed cash:', portfolio.undeployedCash);
 }
 
 // ============================================================================
@@ -306,31 +343,41 @@ function recalculatePortfolioFromTransactions() {
 // ============================================================================
 
 function calculateMetrics() {
-    let totalBuys = 0;
-    let totalSells = 0;
+    let totalBuysAll = 0;
+    let totalSellsAll = 0;
     let totalMarketValue = 0;
     
     portfolio.forEach(position => {
-        totalBuys += position.totalBuys;
-        totalSells += position.totalSells;
-        
-        const currentPrice = currentPrices[position.etf] || position.avgEntry || 0;
-        totalMarketValue += position.shares * currentPrice;
+        if (typeof position === 'object' && position.etf) {
+            totalBuysAll += position.totalBuys;
+            totalSellsAll += position.totalSells;
+            
+            const currentPrice = currentPrices[position.etf] || position.avgEntry || 0;
+            totalMarketValue += position.shares * currentPrice;
+        }
     });
     
-    // Net capital in the portfolio = money put in - money taken out
-    const totalInvested = totalBuys - totalSells;
+    // Net capital deployed = money put in minus money taken out
+    // This is what you'd see reflected in your bank account
+    const netInvested = totalBuysAll - totalSellsAll;
     
-    // Total value = what holdings are worth today
+    // Portfolio value = market value of current holdings
     const totalValue = totalMarketValue;
     
-    // P&L = how much portfolio has grown vs net capital deployed
-    const totalGainLoss = totalValue - totalInvested;
-    const gainLossPercent = totalInvested > 0 ? (totalGainLoss / totalInvested) * 100 : 0;
+    // P&L = holdings value vs net capital deployed
+    const totalGainLoss = totalValue - netInvested;
+    const gainLossPercent = netInvested > 0 ? 
+        (totalGainLoss / netInvested) * 100 : 0;
+    
+    // Undeployed cash = informational only (sale proceeds waiting to be redeployed)
+    const undeployedCash = portfolio.undeployedCash || 0;
     
     return {
-        totalInvested,
-        totalValue,
+        totalBuysAll,       // gross total of all buys (matches per-row sum)
+        totalSellsAll,      // gross total of all sells
+        netInvested,        // buys - sells (dashboard "Total Invested")
+        totalValue,         // market value of holdings
+        undeployedCash,     // cash from sales not yet redeployed
         totalGainLoss,
         gainLossPercent
     };
@@ -340,11 +387,17 @@ function renderDashboard() {
     const metrics = calculateMetrics();
     
     document.getElementById('totalValue').textContent = formatCurrency(metrics.totalValue);
-    document.getElementById('totalInvested').textContent = formatCurrency(metrics.totalInvested);
+    document.getElementById('totalInvested').textContent = formatCurrency(metrics.netInvested);
     document.getElementById('totalGainLoss').textContent = formatCurrency(metrics.totalGainLoss);
     
+    // Undeployed cash display (informational — cash from sales waiting to be redeployed)
+    const cashElement = document.getElementById('undeployedCash');
+    if (cashElement) {
+        cashElement.textContent = formatCurrency(metrics.undeployedCash);
+    }
+    
     // Count only non-zero positions
-    const activePositions = portfolio.filter(p => p.shares > 0).length;
+    const activePositions = portfolio.filter(p => p.etf && p.shares > 0).length;
     document.getElementById('numPositions').textContent = activePositions;
     
     const changeElement = document.getElementById('totalChange');
@@ -354,8 +407,10 @@ function renderDashboard() {
     changeElement.className = metrics.totalGainLoss >= 0 ? 'card-change positive' : 'card-change negative';
     
     const gainPercentElement = document.getElementById('gainLossPercent');
-    gainPercentElement.textContent = `${changePercent}%`;
-    gainPercentElement.className = metrics.totalGainLoss >= 0 ? 'positive' : 'negative';
+    if (gainPercentElement) {
+        gainPercentElement.textContent = `${changePercent}%`;
+        gainPercentElement.className = metrics.totalGainLoss >= 0 ? 'positive' : 'negative';
+    }
     
     renderPositions();
 }
@@ -366,20 +421,30 @@ function renderPositions() {
     
     tbody.innerHTML = '';
     
-    const activePositions = portfolio.filter(p => p.shares > 0);
+    const activePositions = portfolio.filter(p => p.etf && p.shares > 0);
     
     activePositions.forEach((position) => {
         const currentPrice = currentPrices[position.etf] || position.avgEntry || 0;
         const currentValue = position.shares * currentPrice;
         
         // =====================================================================
-        // FIX: Use costBasis (cost of shares still held), NOT totalBuys
-        // totalBuys includes cost of shares already sold — comparing that
-        // against value of remaining shares understates P&L
+        // INVESTED = totalBuys (original investment, never reduced by sells)
+        // This is the performance benchmark — what you actually put in.
+        //
+        // P&L = current market value of remaining shares − original investment
+        // After a partial sell this may look low/negative because cash was
+        // taken off the table. That cash appears in "Undeployed Cash" on the
+        // dashboard until it's redeployed into another ETF.
         // =====================================================================
-        const invested = position.costBasis;
+        const invested = position.totalBuys;
         const gainLoss = currentValue - invested;
         const gainLossPercent = invested > 0 ? (gainLoss / invested) * 100 : 0;
+        
+        // Show a small tag if this position has had sells
+        const hasSells = position.totalSells > 0;
+        const sellTag = hasSells 
+            ? `<br><small class="sell-tag">Sold: ${formatCurrency(position.totalSells)}</small>` 
+            : '';
         
         const row = document.createElement('tr');
         row.innerHTML = `
@@ -387,7 +452,7 @@ function renderPositions() {
             <td>${position.shares.toFixed(2)}</td>
             <td>${formatCurrency(position.avgEntry)}</td>
             <td class="current-price">${formatCurrency(currentPrice)}</td>
-            <td>${formatCurrency(invested)}</td>
+            <td>${formatCurrency(invested)}${sellTag}</td>
             <td>${formatCurrency(currentValue)}</td>
             <td class="${gainLoss >= 0 ? 'positive' : 'negative'}">
                 ${formatCurrency(gainLoss)}<br>
@@ -419,7 +484,7 @@ function renderStrategy() {
     
     tbody.innerHTML = '';
     
-    const activePositions = portfolio.filter(p => p.shares > 0);
+    const activePositions = portfolio.filter(p => p.etf && p.shares > 0);
     
     activePositions.forEach(position => {
         const currentPrice = currentPrices[position.etf] || position.avgEntry || 0;
@@ -482,9 +547,22 @@ async function addTransaction(event) {
     const etf = document.getElementById('transactionETF').value.toUpperCase();
     const action = document.getElementById('transactionAction').value;
     const shares = parseFloat(document.getElementById('transactionShares').value);
-    const price = parseFloat(document.getElementById('transactionPrice').value);
     const date = document.getElementById('transactionDate').value;
     const notes = document.getElementById('transactionNotes').value;
+    
+    // Parse price from text input (handles both "88" and "88.18")
+    const priceInput = document.getElementById('transactionPrice');
+    const price = parseFloat(priceInput.value);
+    
+    if (isNaN(price) || price <= 0) {
+        showNotification('Please enter a valid price', 'error');
+        return;
+    }
+    
+    if (isNaN(shares) || shares <= 0) {
+        showNotification('Please enter a valid number of shares', 'error');
+        return;
+    }
     
     const total = shares * price;
     
@@ -559,7 +637,7 @@ function isMarketHours() {
 }
 
 async function fetchCurrentPrices(isAutoUpdate = false) {
-    const activeETFs = portfolio.filter(p => p.shares > 0).map(p => p.etf);
+    const activeETFs = portfolio.filter(p => p.etf && p.shares > 0).map(p => p.etf);
     if (activeETFs.length === 0) return;
     
     const symbols = activeETFs.join(',');
@@ -654,6 +732,35 @@ function openTransactionModal(etf = '', action = 'BUY') {
 
 function closeTransactionModal() {
     document.getElementById('transactionModal').style.display = 'none';
+}
+
+// FIX: Convert price input from type="number" (shows useless spinners on mobile)
+// to type="text" with inputmode="decimal" (shows numeric keyboard, allows typing)
+function fixMobileInputs() {
+    const priceInput = document.getElementById('transactionPrice');
+    if (priceInput) {
+        priceInput.type = 'text';
+        priceInput.inputMode = 'decimal';
+        priceInput.pattern = '[0-9]*\\.?[0-9]*';
+        priceInput.placeholder = 'e.g. 88 or 88.18';
+        
+        // Auto-calculate total when price or shares change
+        priceInput.addEventListener('input', updateTotalAmount);
+    }
+    
+    const sharesInput = document.getElementById('transactionShares');
+    if (sharesInput) {
+        sharesInput.addEventListener('input', updateTotalAmount);
+    }
+}
+
+function updateTotalAmount() {
+    const shares = parseFloat(document.getElementById('transactionShares').value) || 0;
+    const price = parseFloat(document.getElementById('transactionPrice').value) || 0;
+    const totalField = document.getElementById('transactionTotal') || document.getElementById('txTotal');
+    if (totalField) {
+        totalField.value = (shares * price).toFixed(2);
+    }
 }
 
 function formatCurrency(amount) {
@@ -760,7 +867,7 @@ function exportPortfolioData() {
     const exportData = {
         transactions: transactions,
         exportDate: new Date().toISOString(),
-        version: '3.0-versioned-storage'
+        version: '4.0-original-investment-model'
     };
     
     const dataStr = JSON.stringify(exportData, null, 2);
