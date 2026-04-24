@@ -192,6 +192,14 @@ async function initializeApp() {
     showLoadingIndicator('Loading portfolio data...');
     console.log(`ETF Tracker starting (data version ${CONFIG.DATA_VERSION})`);
     
+    // Inject styles for sell/redeploy tags
+    const tagStyles = document.createElement('style');
+    tagStyles.textContent = `
+        .sell-tag { color: #f59e0b; opacity: 0.85; }
+        .redeploy-tag { color: #22d3ee; opacity: 0.85; }
+    `;
+    document.head.appendChild(tagStyles);
+    
     const savedTransactions = await loadTransactionsFromCloud();
     
     if (savedTransactions && savedTransactions.length > 0) {
@@ -275,29 +283,13 @@ async function loadCachedPrices() {
 function recalculatePortfolioFromTransactions() {
     portfolio = [];
     
-    // Track sell/buy chronology to calculate undeployed cash
-    let totalSellProceeds = 0;
-    let buysAfterFirstSell = 0;
-    let firstSellOccurred = false;
-    
-    // First pass: process all transactions chronologically
+    // Process all transactions chronologically to track cash pool
     const sortedTx = [...transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
     
+    // Cash pool: fills up from sells, drains as you redeploy into buys
+    let cashPool = 0;
+    
     sortedTx.forEach(t => {
-        if (t.action === 'SELL') {
-            firstSellOccurred = true;
-            totalSellProceeds += t.total;
-        } else if (t.action === 'BUY' && firstSellOccurred) {
-            buysAfterFirstSell += t.total;
-        }
-    });
-    
-    // Undeployed cash = sell proceeds not yet redeployed into new buys
-    // If you sold $21K and then bought $10K of IAU, undeployed = $11K
-    portfolio.undeployedCash = Math.max(0, totalSellProceeds - buysAfterFirstSell);
-    
-    // Second pass: build positions
-    transactions.forEach(t => {
         let position = portfolio.find(p => p.etf === t.etf);
         
         if (!position) {
@@ -308,6 +300,7 @@ function recalculatePortfolioFromTransactions() {
                 costBasis: 0,        // Cost basis of currently held shares
                 totalBuys: 0,        // Sum of all buy amounts (original investment)
                 totalSells: 0,       // Sum of all sell proceeds
+                redeployed: 0,       // How much of totalBuys came from sale proceeds
                 strategy: etfStrategies[t.etf] || 'Add strategy notes'
             };
             portfolio.push(position);
@@ -318,12 +311,22 @@ function recalculatePortfolioFromTransactions() {
             position.costBasis += t.total;
             position.totalBuys += t.total;
             position.avgEntry = position.shares > 0 ? position.costBasis / position.shares : 0;
+            
+            // If there's cash in the pool, this buy is funded (partially or fully) by redeployed cash
+            if (cashPool > 0) {
+                const redeployedAmount = Math.min(cashPool, t.total);
+                position.redeployed += redeployedAmount;
+                cashPool -= redeployedAmount;
+            }
         } else if (t.action === 'SELL') {
             // Reduce cost basis by what the sold shares originally cost
             const costBasisOfSold = t.shares * position.avgEntry;
             position.shares -= t.shares;
             position.costBasis -= costBasisOfSold;
             position.totalSells += t.total;
+            
+            // Sale proceeds go into the cash pool
+            cashPool += t.total;
             
             // avgEntry stays the same (average cost method)
             if (position.shares <= 0) {
@@ -333,6 +336,9 @@ function recalculatePortfolioFromTransactions() {
             }
         }
     });
+    
+    // Whatever's left in the cash pool is undeployed
+    portfolio.undeployedCash = Math.max(0, cashPool);
     
     console.log('Portfolio recalculated:', portfolio.length, 'positions');
     console.log('Undeployed cash:', portfolio.undeployedCash);
@@ -440,10 +446,12 @@ function renderPositions() {
         const gainLoss = currentValue - invested;
         const gainLossPercent = invested > 0 ? (gainLoss / invested) * 100 : 0;
         
-        // Show a small tag if this position has had sells
-        const hasSells = position.totalSells > 0;
-        const sellTag = hasSells 
+        // Show small tags for sells and redeployed cash
+        const sellTag = position.totalSells > 0 
             ? `<br><small class="sell-tag">Sold: ${formatCurrency(position.totalSells)}</small>` 
+            : '';
+        const redeployTag = position.redeployed > 0 
+            ? `<br><small class="redeploy-tag">Redeployed: ${formatCurrency(position.redeployed)}</small>` 
             : '';
         
         const row = document.createElement('tr');
@@ -452,7 +460,7 @@ function renderPositions() {
             <td>${position.shares.toFixed(2)}</td>
             <td>${formatCurrency(position.avgEntry)}</td>
             <td class="current-price">${formatCurrency(currentPrice)}</td>
-            <td>${formatCurrency(invested)}${sellTag}</td>
+            <td>${formatCurrency(invested)}${sellTag}${redeployTag}</td>
             <td>${formatCurrency(currentValue)}</td>
             <td class="${gainLoss >= 0 ? 'positive' : 'negative'}">
                 ${formatCurrency(gainLoss)}<br>
