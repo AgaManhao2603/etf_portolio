@@ -272,14 +272,14 @@ async function loadCachedPrices() {
 //   Sell tag   = shows cash received from sales for this ETF
 //
 // DASHBOARD TOTALS:
-//   Total Invested = sum(totalBuys) − sum(totalSells) = net capital deployed
-//   Portfolio Value = sum(shares × price) = market value of holdings
+//   Total Invested = sum(totalBuys)  (gross capital deployed across all ETFs)
+//   Portfolio Value = sum(shares × price) + undeployed cash
 //   P&L            = Portfolio Value − Total Invested
 //   Undeployed Cash = sale proceeds not yet redeployed (informational)
 //
-// NOTE: Per-row invested totals will exceed dashboard "Total Invested"
-// by the amount of sale proceeds. This is expected — rows show gross
-// investment per ETF, dashboard shows net capital in the market.
+// The redeployed field is kept on positions for the informational cyan tag
+// but does NOT affect P&L calculation. P&L is always the simple difference
+// between what you put in and what it's worth now.
 
 function recalculatePortfolioFromTransactions() {
     portfolio = [];
@@ -351,15 +351,11 @@ function recalculatePortfolioFromTransactions() {
 
 function calculateMetrics() {
     let totalBuysAll = 0;
-    let totalSellsAll = 0;
-    let totalRedeployedAll = 0;
     let totalMarketValue = 0;
     
     portfolio.forEach(position => {
         if (typeof position === 'object' && position.etf) {
             totalBuysAll += position.totalBuys;
-            totalSellsAll += position.totalSells;
-            totalRedeployedAll += (position.redeployed || 0);
             
             const currentPrice = currentPrices[position.etf] || position.avgEntry || 0;
             totalMarketValue += position.shares * currentPrice;
@@ -374,18 +370,17 @@ function calculateMetrics() {
     // Total Value = market value of holdings + cash on sideline
     const totalValue = totalMarketValue + undeployedCash;
     
-    // Original capital = what came from your pocket (excludes redeployed "house money")
-    // P&L measures true return on your original capital
-    const originalCapital = totalBuysAll - totalRedeployedAll;
-    const totalGainLoss = totalValue - originalCapital;
-    const gainLossPercent = originalCapital > 0 ? 
-        (totalGainLoss / originalCapital) * 100 : 0;
+    // P&L = simple difference: what it's worth now minus what you put in
+    // No adjustments for redeployed cash — that's just money moving between
+    // positions, it doesn't change your total outlay or total value.
+    const totalGainLoss = totalValue - totalInvested;
+    const gainLossPercent = totalInvested > 0 ? 
+        (totalGainLoss / totalInvested) * 100 : 0;
     
     return {
         totalInvested,      // gross total of all buys (matches per-row sum)
         totalValue,         // market value + undeployed cash
-        undeployedCash,     // cash from sales not yet redeployed
-        originalCapital,    // out-of-pocket capital (buys minus redeployed)
+        undeployedCash,     // cash from sales not yet redeployed (informational)
         totalGainLoss,
         gainLossPercent
     };
