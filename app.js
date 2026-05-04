@@ -407,8 +407,8 @@ function renderPositions() {
                 <small>(${gainLossPercent.toFixed(2)}%)</small>
             </td>
             <td>
-                <button class="btn btn-buy" onclick="openTransactionModal('BUY', '${position.etf}')">+ Buy</button>
-                <button class="btn btn-sell" onclick="openTransactionModal('SELL', '${position.etf}')">− Sell</button>
+                <button style="padding:6px 16px;border-radius:6px;font-size:0.85rem;font-weight:600;cursor:pointer;background:transparent;color:#00e676;border:1px solid #00e676;" onclick="openTransactionModal('BUY', '${position.etf}')">+ Buy</button>
+                <button style="padding:6px 16px;border-radius:6px;font-size:0.85rem;font-weight:600;cursor:pointer;background:transparent;color:#ff5252;border:1px solid #ff5252;" onclick="openTransactionModal('SELL', '${position.etf}')">− Sell</button>
             </td>
         `;
 
