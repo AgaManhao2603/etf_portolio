@@ -1,12 +1,16 @@
 // ETF Portfolio Tracker - CLOUD STORAGE VERSION
 // Versioned data storage: bumping DATA_VERSION forces clean reinitialize
+// v6: Added May 2026 sells + transaction journal backup + export-as-code
 
 // CONFIGURATION
 const CONFIG = {
-    DATA_VERSION: 5,
-    CLOUD_STORAGE_KEY: 'etf_portfolio_v5',
+    DATA_VERSION: 6,
+    CLOUD_STORAGE_KEY: 'etf_portfolio_v6',
     CLOUD_PRICES_KEY: 'etf_current_prices',
-    LOCAL_BACKUP_KEY: 'etf_portfolio_local_v5',
+    LOCAL_BACKUP_KEY: 'etf_portfolio_local_v6',
+    // Non-versioned journal key — survives version bumps and storage resets
+    JOURNAL_KEY: 'etf_transaction_journal',
+    LOCAL_JOURNAL_KEY: 'etf_transaction_journal_local',
     PRICE_UPDATE: {
         marketHoursInterval: 5 * 60 * 1000,
         afterHoursInterval: 2 * 60 * 60 * 1000,
@@ -40,7 +44,12 @@ const initialTransactions = [
 
     // === APRIL 2026 IAU DCA (redeployed from SOXX sale) ===
     { date: '2026-04-24', etf: 'IAU', action: 'BUY', shares: 113, price: 88.18, total: 9964.34, notes: 'IAU T1 - Bought the dip, redeployed from SOXX sale' },
-    { date: '2026-04-28', etf: 'IAU', action: 'BUY', shares: 127, price: 86.23, total: 10951.21, notes: 'IAU T2 - DBS fill at gold $4,600 level' }
+    { date: '2026-04-28', etf: 'IAU', action: 'BUY', shares: 127, price: 86.23, total: 10951.21, notes: 'IAU T2 - DBS fill at gold $4,600 level' },
+
+    // === MAY 2026 PARTIAL SELLS ===
+    { date: '2026-05-06', etf: 'SOXX', action: 'SELL', shares: 26, price: 497.71, total: 12940.46, notes: 'Partial sell - capital redeployment' },
+    { date: '2026-05-06', etf: 'IWM', action: 'SELL', shares: 24, price: 285.33, total: 6847.92, notes: 'Partial sell - capital redeployment' },
+    { date: '2026-05-06', etf: 'SCHD', action: 'SELL', shares: 298, price: 31.62, total: 9422.76, notes: 'Partial sell - capital redeployment' }
 ];
 
 // Strategy notes for each ETF
@@ -91,6 +100,9 @@ async function saveTransactionsToCloud() {
     } catch (e) {
         console.warn('localStorage backup failed:', e);
     }
+
+    // Also save to non-versioned journal (survives version bumps)
+    await saveToJournal();
 }
 
 async function loadTransactionsFromCloud() {
@@ -130,6 +142,72 @@ async function loadTransactionsFromCloud() {
 
     return null;
 }
+
+// ============================================================================
+// TRANSACTION JOURNAL — non-versioned backup that survives everything
+// ============================================================================
+
+async function saveToJournal() {
+    const journalPayload = JSON.stringify({
+        savedAt: new Date().toISOString(),
+        transactions: transactions
+    });
+
+    if (cloudStorageAvailable) {
+        try {
+            await window.storage.set(CONFIG.JOURNAL_KEY, journalPayload);
+            console.log('✅ Journal backup saved to cloud');
+        } catch (err) {
+            console.warn('Journal cloud save failed:', err);
+        }
+    }
+
+    try {
+        localStorage.setItem(CONFIG.LOCAL_JOURNAL_KEY, journalPayload);
+    } catch (e) {
+        console.warn('Journal localStorage save failed:', e);
+    }
+}
+
+async function loadFromJournal() {
+    let data = null;
+
+    if (cloudStorageAvailable) {
+        try {
+            const result = await window.storage.get(CONFIG.JOURNAL_KEY);
+            if (result && result.value) {
+                data = JSON.parse(result.value);
+                console.log('✅ Recovered from cloud journal');
+            }
+        } catch (err) {
+            console.warn('Journal cloud load failed:', err);
+        }
+    }
+
+    if (!data) {
+        try {
+            const local = localStorage.getItem(CONFIG.LOCAL_JOURNAL_KEY);
+            if (local) {
+                data = JSON.parse(local);
+                console.log('✅ Recovered from localStorage journal');
+            }
+        } catch (e) {
+            console.warn('Journal localStorage load failed:', e);
+        }
+    }
+
+    // Journal is valid if it has more transactions than initialTransactions
+    // (meaning the user added transactions via the UI that aren't in code)
+    if (data && data.transactions && data.transactions.length >= initialTransactions.length) {
+        return data.transactions;
+    }
+
+    return null;
+}
+
+// ============================================================================
+// PRICE STORAGE
+// ============================================================================
 
 async function savePricesToCloud() {
     const payload = JSON.stringify({
@@ -260,14 +338,8 @@ function calculateMetrics() {
         totalValue += position.shares * currentPrice;
     });
 
-    // Total Invested = gross buys (matches sum of per-row "Invested" columns)
     const totalInvested = totalBuysAll;
-
-    // Undeployed cash = sale proceeds not yet redeployed
     const undeployedCash = totalSellsAll - totalRedeployedAll;
-
-    // G/L = market value minus gross buys
-    // Ensures: sum of per-row G/L === dashboard G/L (always consistent)
     const totalGainLoss = totalValue - totalInvested;
     const gainLossPercent = totalInvested > 0 ? (totalGainLoss / totalInvested) * 100 : 0;
 
@@ -326,7 +398,6 @@ function renderPositions() {
         const gainLoss = currentValue - invested;
         const gainLossPercent = invested > 0 ? (gainLoss / invested) * 100 : 0;
 
-        // Show small tags for sells and redeployed cash
         const sellTag = position.totalSells > 0
             ? `<br><small class="sell-tag">Sold: ${formatCurrency(position.totalSells)}</small>`
             : '';
@@ -493,12 +564,12 @@ async function fetchCurrentPrices(isAutoUpdate = false) {
 
 function loadFallbackPrices() {
     const fallback = {
-        'SOXX': 465.75,
-        'IWM': 279.28,
-        'IAU': 86.72,
-        'SLV': 68.29,
-        'SCHD': 31.86,
-        'VTI': 355.29
+        'SOXX': 497.71,
+        'IWM': 285.33,
+        'IAU': 86.23,
+        'SLV': 79.35,
+        'SCHD': 31.62,
+        'VTI': 364.71
     };
 
     Object.keys(fallback).forEach(symbol => {
@@ -570,7 +641,6 @@ function hideUpdateIndicator() {
 // TRANSACTION MANAGEMENT (UI)
 // ============================================================================
 
-// Signature: (etf, action) — matches onclick in renderPositions
 function openTransactionModal(etf = '', action = 'BUY') {
     const modal = document.getElementById('transactionModal');
     const form = document.getElementById('transactionForm');
@@ -583,7 +653,6 @@ function openTransactionModal(etf = '', action = 'BUY') {
     document.getElementById('transactionAction').value = action;
     document.getElementById('transactionDate').value = new Date().toISOString().split('T')[0];
 
-    // Fix mobile price input: switch from number spinner to decimal keyboard
     const priceInput = document.getElementById('transactionPrice');
     if (priceInput) {
         priceInput.type = 'text';
@@ -697,6 +766,43 @@ function exportPortfolioData() {
     showNotification('Portfolio data exported!', 'success');
 }
 
+// Export transactions as code — paste directly into app.js initialTransactions
+function exportAsCode() {
+    const sorted = [...transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    let code = 'const initialTransactions = [\n';
+
+    let lastYear = '';
+    sorted.forEach((t, i) => {
+        const year = t.date.substring(0, 4);
+        if (year !== lastYear) {
+            code += `\n    // === ${year} ===\n`;
+            lastYear = year;
+        }
+
+        const notesStr = t.notes ? `, notes: '${t.notes.replace(/'/g, "\\'")}'` : '';
+        code += `    { date: '${t.date}', etf: '${t.etf}', action: '${t.action}', shares: ${t.shares}, price: ${t.price}, total: ${t.total}${notesStr} }`;
+        code += i < sorted.length - 1 ? ',\n' : '\n';
+    });
+
+    code += '];\n';
+
+    // Copy to clipboard
+    navigator.clipboard.writeText(code).then(() => {
+        showNotification('Code copied to clipboard! Paste into app.js to replace initialTransactions.', 'success');
+    }).catch(() => {
+        // Fallback: download as file
+        const blob = new Blob([code], { type: 'text/javascript' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `initialTransactions-${new Date().toISOString().split('T')[0]}.js`;
+        a.click();
+        URL.revokeObjectURL(url);
+        showNotification('Code downloaded as file. Paste contents into app.js.', 'success');
+    });
+}
+
 async function importPortfolioData(e) {
     const file = e.target.files[0];
     if (!file) return;
@@ -763,7 +869,17 @@ async function initializeApp() {
         loadFallbackPrices();
     }
 
-    const stored = await loadTransactionsFromCloud();
+    // Try primary storage first
+    let stored = await loadTransactionsFromCloud();
+
+    // If primary storage is empty, try the journal backup
+    if (!stored) {
+        console.log('Primary storage empty, checking journal backup...');
+        stored = await loadFromJournal();
+        if (stored) {
+            console.log(`✅ Recovered ${stored.length} transactions from journal backup`);
+        }
+    }
 
     if (stored) {
         transactions = stored;
@@ -830,6 +946,12 @@ function setupEventListeners() {
         exportBtn.addEventListener('click', exportPortfolioData);
     }
 
+    // Export as code button
+    const exportCodeBtn = document.getElementById('exportAsCode');
+    if (exportCodeBtn) {
+        exportCodeBtn.addEventListener('click', exportAsCode);
+    }
+
     // Import input
     const importInput = document.getElementById('importData');
     if (importInput) {
@@ -852,3 +974,4 @@ window.openTransactionModal = openTransactionModal;
 window.closeTransactionModal = closeTransactionModal;
 window.deleteTransaction = deleteTransaction;
 window.exportPortfolioData = exportPortfolioData;
+window.exportAsCode = exportAsCode;
