@@ -1,13 +1,15 @@
 // ETF Portfolio Tracker - CLOUD STORAGE VERSION
 // Versioned data storage: bumping DATA_VERSION forces clean reinitialize
 // v6: Added May 2026 sells + transaction journal backup + export-as-code
+// v7: Baked in Jun/Jul 2026 equity ETF exit sells (SOXX/SCHD/IWM/VTI) + stable
+//     transaction IDs so delete-by-value can no longer mismatch/lose data
 
 // CONFIGURATION
 const CONFIG = {
-    DATA_VERSION: 6,
-    CLOUD_STORAGE_KEY: 'etf_portfolio_v6',
+    DATA_VERSION: 7,
+    CLOUD_STORAGE_KEY: 'etf_portfolio_v7',
     CLOUD_PRICES_KEY: 'etf_current_prices',
-    LOCAL_BACKUP_KEY: 'etf_portfolio_local_v6',
+    LOCAL_BACKUP_KEY: 'etf_portfolio_local_v7',
     // Non-versioned journal key — survives version bumps and storage resets
     JOURNAL_KEY: 'etf_transaction_journal',
     LOCAL_JOURNAL_KEY: 'etf_transaction_journal_local',
@@ -19,37 +21,46 @@ const CONFIG = {
 };
 
 // INITIAL TRANSACTIONS - Complete history (single source of truth)
+// Every transaction carries a stable, permanent `id`. deleteTransaction()
+// matches on this id (never on date/etf/shares/price), so it can no longer
+// delete the wrong row when two transactions happen to share the same values.
 const initialTransactions = [
     // === INITIAL POSITIONS (January 2024) ===
-    { date: '2024-01-15', etf: 'SOXX', action: 'BUY', shares: 107, price: 280.00, total: 29960, notes: 'Initial Position - Entry at dip' },
-    { date: '2024-01-15', etf: 'SCHD', action: 'BUY', shares: 449, price: 27.86, total: 12509, notes: 'Initial Dividend Position' },
-    { date: '2024-01-15', etf: 'IWM', action: 'BUY', shares: 30, price: 253.83, total: 7615, notes: 'IWM Initial - First entry' },
+    { id: 'init-01', date: '2024-01-15', etf: 'SOXX', action: 'BUY', shares: 107, price: 280.00, total: 29960, notes: 'Initial Position - Entry at dip' },
+    { id: 'init-02', date: '2024-01-15', etf: 'SCHD', action: 'BUY', shares: 449, price: 27.86, total: 12509, notes: 'Initial Dividend Position' },
+    { id: 'init-03', date: '2024-01-15', etf: 'IWM', action: 'BUY', shares: 30, price: 253.83, total: 7615, notes: 'IWM Initial - First entry' },
 
     // === DECEMBER 2024 SCALING ===
-    { date: '2024-12-13', etf: 'SOXX', action: 'BUY', shares: 48, price: 310.00, total: 14880, notes: 'SOXX Scale T2 - Fibonacci entry' },
-    { date: '2024-12-15', etf: 'SOXX', action: 'BUY', shares: 30, price: 305.00, total: 9150, notes: 'SOXX Scale T3 - Consolidation' },
-    { date: '2024-12-29', etf: 'IAU', action: 'BUY', shares: 370, price: 81.72, total: 30236, notes: 'Gold - 0.382 Fib entry during capitulation' },
-    { date: '2024-12-29', etf: 'SLV', action: 'BUY', shares: 305, price: 65.53, total: 19987, notes: 'Silver - 0.618 Fib entry' },
-    { date: '2024-12-31', etf: 'IWM', action: 'BUY', shares: 79, price: 249.00, total: 19671, notes: 'IWM Scale T2 - Overnight fill' },
+    { id: 'init-04', date: '2024-12-13', etf: 'SOXX', action: 'BUY', shares: 48, price: 310.00, total: 14880, notes: 'SOXX Scale T2 - Fibonacci entry' },
+    { id: 'init-05', date: '2024-12-15', etf: 'SOXX', action: 'BUY', shares: 30, price: 305.00, total: 9150, notes: 'SOXX Scale T3 - Consolidation' },
+    { id: 'init-06', date: '2024-12-29', etf: 'IAU', action: 'BUY', shares: 370, price: 81.72, total: 30236, notes: 'Gold - 0.382 Fib entry during capitulation' },
+    { id: 'init-07', date: '2024-12-29', etf: 'SLV', action: 'BUY', shares: 305, price: 65.53, total: 19987, notes: 'Silver - 0.618 Fib entry' },
+    { id: 'init-08', date: '2024-12-31', etf: 'IWM', action: 'BUY', shares: 79, price: 249.00, total: 19671, notes: 'IWM Scale T2 - Overnight fill' },
 
     // === JANUARY 2025 SCALING ===
-    { date: '2025-01-03', etf: 'IWM', action: 'BUY', shares: 80, price: 248.70, total: 19896, notes: 'IWM Scale T3 - Lower target fill' },
-    { date: '2025-01-05', etf: 'SCHD', action: 'BUY', shares: 2158, price: 27.96, total: 60338, notes: 'SCHD Scale - Major accumulation' },
-    { date: '2025-01-05', etf: 'VTI', action: 'BUY', shares: 212, price: 338.40, total: 71741, notes: 'VTI - New total market position' },
-    { date: '2025-01-06', etf: 'IAU', action: 'BUY', shares: 479, price: 95.08, total: 45544, notes: 'IAU Scale - Dollar weakness hedge' },
-    { date: '2025-01-06', etf: 'SLV', action: 'BUY', shares: 1353, price: 99.57, total: 134716, notes: 'SLV Scale - Major silver position' },
+    { id: 'init-09', date: '2025-01-03', etf: 'IWM', action: 'BUY', shares: 80, price: 248.70, total: 19896, notes: 'IWM Scale T3 - Lower target fill' },
+    { id: 'init-10', date: '2025-01-05', etf: 'SCHD', action: 'BUY', shares: 2158, price: 27.96, total: 60338, notes: 'SCHD Scale - Major accumulation' },
+    { id: 'init-11', date: '2025-01-05', etf: 'VTI', action: 'BUY', shares: 212, price: 338.40, total: 71741, notes: 'VTI - New total market position' },
+    { id: 'init-12', date: '2025-01-06', etf: 'IAU', action: 'BUY', shares: 479, price: 95.08, total: 45544, notes: 'IAU Scale - Dollar weakness hedge' },
+    { id: 'init-13', date: '2025-01-06', etf: 'SLV', action: 'BUY', shares: 1353, price: 99.57, total: 134716, notes: 'SLV Scale - Major silver position' },
 
     // === APRIL 2025 REBALANCING ===
-    { date: '2025-04-20', etf: 'SOXX', action: 'SELL', shares: 50, price: 418.24, total: 20912, notes: 'Partial take-profit - redeploy to IAU' },
+    { id: 'init-14', date: '2025-04-20', etf: 'SOXX', action: 'SELL', shares: 50, price: 418.24, total: 20912, notes: 'Partial take-profit - redeploy to IAU' },
 
     // === APRIL 2026 IAU DCA (redeployed from SOXX sale) ===
-    { date: '2026-04-24', etf: 'IAU', action: 'BUY', shares: 113, price: 88.18, total: 9964.34, notes: 'IAU T1 - Bought the dip, redeployed from SOXX sale' },
-    { date: '2026-04-28', etf: 'IAU', action: 'BUY', shares: 127, price: 86.23, total: 10951.21, notes: 'IAU T2 - DBS fill at gold $4,600 level' },
+    { id: 'init-15', date: '2026-04-24', etf: 'IAU', action: 'BUY', shares: 113, price: 88.18, total: 9964.34, notes: 'IAU T1 - Bought the dip, redeployed from SOXX sale' },
+    { id: 'init-16', date: '2026-04-28', etf: 'IAU', action: 'BUY', shares: 127, price: 86.23, total: 10951.21, notes: 'IAU T2 - DBS fill at gold $4,600 level' },
 
     // === MAY 2026 PARTIAL SELLS ===
-    { date: '2026-05-06', etf: 'SOXX', action: 'SELL', shares: 26, price: 497.71, total: 12940.46, notes: 'Partial sell - capital redeployment' },
-    { date: '2026-05-06', etf: 'IWM', action: 'SELL', shares: 24, price: 285.33, total: 6847.92, notes: 'Partial sell - capital redeployment' },
-    { date: '2026-05-06', etf: 'SCHD', action: 'SELL', shares: 298, price: 31.62, total: 9422.76, notes: 'Partial sell - capital redeployment' }
+    { id: 'init-17', date: '2026-05-06', etf: 'SOXX', action: 'SELL', shares: 26, price: 497.71, total: 12940.46, notes: 'Partial sell - capital redeployment' },
+    { id: 'init-18', date: '2026-05-06', etf: 'IWM', action: 'SELL', shares: 24, price: 285.33, total: 6847.92, notes: 'Partial sell - capital redeployment' },
+    { id: 'init-19', date: '2026-05-06', etf: 'SCHD', action: 'SELL', shares: 298, price: 31.62, total: 9422.76, notes: 'Partial sell - capital redeployment' },
+
+    // === JUN/JUL 2026 EQUITY ETF EXIT (per DBS fill confirmations) ===
+    { id: 'init-20', date: '2026-06-22', etf: 'SOXX', action: 'SELL', shares: 26, price: 654.01, total: 17004.26, notes: 'Partial sell - equity exit ahead of anticipated volatility' },
+    { id: 'init-21', date: '2026-07-27', etf: 'SCHD', action: 'SELL', shares: 2309, price: 33.43, total: 77189.87, notes: 'Full exit - equity ETF exit ahead of anticipated volatility' },
+    { id: 'init-22', date: '2026-07-27', etf: 'IWM', action: 'SELL', shares: 165, price: 293.88, total: 48490.20, notes: 'Full exit - equity ETF exit ahead of anticipated volatility' },
+    { id: 'init-23', date: '2026-07-27', etf: 'VTI', action: 'SELL', shares: 194, price: 367.615155, total: 71317.34, notes: 'Partial exit - equity ETF exit ahead of anticipated volatility' }
 ];
 
 // Strategy notes for each ETF
@@ -450,7 +461,7 @@ function renderTransactions() {
 
     const sortedTransactions = [...transactions].sort((a, b) => new Date(b.date) - new Date(a.date));
 
-    sortedTransactions.forEach((t, index) => {
+    sortedTransactions.forEach((t) => {
         const row = document.createElement('tr');
         row.innerHTML = `
             <td>${new Date(t.date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}</td>
@@ -461,7 +472,7 @@ function renderTransactions() {
             <td>${formatCurrency(t.total)}</td>
             <td>${t.notes || ''}</td>
             <td>
-                <button class="btn-icon" onclick="deleteTransaction(${index})">
+                <button class="btn-icon" onclick="deleteTransaction('${t.id}')">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <polyline points="3 6 5 6 21 6"></polyline>
                         <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
@@ -694,6 +705,7 @@ async function addTransaction(event) {
     }
 
     const transaction = {
+        id: generateTxnId(),
         date,
         etf,
         action,
@@ -716,18 +728,13 @@ async function addTransaction(event) {
     showNotification('Transaction added successfully', 'success');
 }
 
-async function deleteTransaction(index) {
+async function deleteTransaction(id) {
     if (!confirm('Are you sure you want to delete this transaction?')) return;
 
-    const sortedTransactions = [...transactions].sort((a, b) => new Date(b.date) - new Date(a.date));
-    const transactionToDelete = sortedTransactions[index];
-
-    const actualIndex = transactions.findIndex(t =>
-        t.date === transactionToDelete.date &&
-        t.etf === transactionToDelete.etf &&
-        t.shares === transactionToDelete.shares &&
-        t.price === transactionToDelete.price
-    );
+    // Match strictly on the transaction's unique id — never on date/etf/shares/
+    // price — so two transactions that happen to share the same values can
+    // never cause the wrong one to be deleted.
+    const actualIndex = transactions.findIndex(t => t.id === id);
 
     if (actualIndex >= 0) {
         transactions.splice(actualIndex, 1);
@@ -740,7 +747,19 @@ async function deleteTransaction(index) {
         renderStrategy();
 
         showNotification('Transaction deleted', 'info');
+    } else {
+        showNotification('Could not find that transaction to delete', 'error');
     }
+}
+
+function generateTxnId() {
+    return 'txn-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+}
+
+// Backfill ids onto any legacy transactions (loaded from old cloud/journal
+// data) that predate the id field, so delete-by-id always has something to match.
+function ensureTransactionIds(txns) {
+    return txns.map((t, i) => t.id ? t : { ...t, id: `legacy-${i}-${t.date}-${t.etf}-${t.shares}-${t.price}` });
 }
 
 // ============================================================================
@@ -882,7 +901,7 @@ async function initializeApp() {
     }
 
     if (stored) {
-        transactions = stored;
+        transactions = ensureTransactionIds(stored);
         console.log(`Loaded ${transactions.length} transactions from storage`);
     } else {
         transactions = [...initialTransactions];
