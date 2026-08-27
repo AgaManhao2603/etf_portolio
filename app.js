@@ -3,13 +3,18 @@
 // v6: Added May 2026 sells + transaction journal backup + export-as-code
 // v7: Baked in Jun/Jul 2026 equity ETF exit sells (SOXX/SCHD/IWM/VTI) + stable
 //     transaction IDs so delete-by-value can no longer mismatch/lose data
+// v8: Added the second VTI sell (18 shares @ $370.28, 22 Jun 2026) that fully
+//     closes out the VTI position (212 - 18 - 194 = 0)
+// v9: Dashboard summary (Total Invested / Total Value / Gain-Loss) now only
+//     counts currently-open positions — fully-exited ETFs (SCHD/IWM/VTI) no
+//     longer drag the numbers down with capital that's already back in cash
 
 // CONFIGURATION
 const CONFIG = {
-    DATA_VERSION: 7,
-    CLOUD_STORAGE_KEY: 'etf_portfolio_v7',
+    DATA_VERSION: 9,
+    CLOUD_STORAGE_KEY: 'etf_portfolio_v9',
     CLOUD_PRICES_KEY: 'etf_current_prices',
-    LOCAL_BACKUP_KEY: 'etf_portfolio_local_v7',
+    LOCAL_BACKUP_KEY: 'etf_portfolio_local_v9',
     // Non-versioned journal key — survives version bumps and storage resets
     JOURNAL_KEY: 'etf_transaction_journal',
     LOCAL_JOURNAL_KEY: 'etf_transaction_journal_local',
@@ -58,9 +63,10 @@ const initialTransactions = [
 
     // === JUN/JUL 2026 EQUITY ETF EXIT (per DBS fill confirmations) ===
     { id: 'init-20', date: '2026-06-22', etf: 'SOXX', action: 'SELL', shares: 26, price: 654.01, total: 17004.26, notes: 'Partial sell - equity exit ahead of anticipated volatility' },
+    { id: 'init-24', date: '2026-06-22', etf: 'VTI', action: 'SELL', shares: 18, price: 370.28, total: 6665.04, notes: 'Partial exit - equity ETF exit ahead of anticipated volatility' },
     { id: 'init-21', date: '2026-07-27', etf: 'SCHD', action: 'SELL', shares: 2309, price: 33.43, total: 77189.87, notes: 'Full exit - equity ETF exit ahead of anticipated volatility' },
     { id: 'init-22', date: '2026-07-27', etf: 'IWM', action: 'SELL', shares: 165, price: 293.88, total: 48490.20, notes: 'Full exit - equity ETF exit ahead of anticipated volatility' },
-    { id: 'init-23', date: '2026-07-27', etf: 'VTI', action: 'SELL', shares: 194, price: 367.615155, total: 71317.34, notes: 'Partial exit - equity ETF exit ahead of anticipated volatility' }
+    { id: 'init-23', date: '2026-07-27', etf: 'VTI', action: 'SELL', shares: 194, price: 367.615155, total: 71317.34, notes: 'Full exit - equity ETF exit ahead of anticipated volatility' }
 ];
 
 // Strategy notes for each ETF
@@ -336,20 +342,26 @@ function recalculatePortfolioFromTransactions() {
 // ============================================================================
 
 function calculateMetrics() {
-    let totalBuysAll = 0;
-    let totalSellsAll = 0;
+    let totalBuysOpen = 0;   // Invested capital in positions still held (current trades only)
+    let totalSellsAll = 0;   // All-time sell proceeds (needed for cash accounting)
     let totalValue = 0;
     let totalRedeployedAll = 0;
 
     portfolio.forEach(position => {
-        totalBuysAll += position.totalBuys;
         totalSellsAll += position.totalSells;
         totalRedeployedAll += (position.redeployed || 0);
         const currentPrice = currentPrices[position.etf] || position.avgEntry || 0;
         totalValue += position.shares * currentPrice;
+
+        // Only count invested capital for positions still open. A fully-exited
+        // position's original cost basis is gone — that capital already
+        // reappeared as Undeployed Cash — so it shouldn't drag Gain/Loss down.
+        if (position.shares > 0) {
+            totalBuysOpen += position.totalBuys;
+        }
     });
 
-    const totalInvested = totalBuysAll;
+    const totalInvested = totalBuysOpen;
     const undeployedCash = totalSellsAll - totalRedeployedAll;
     const totalGainLoss = totalValue - totalInvested;
     const gainLossPercent = totalInvested > 0 ? (totalGainLoss / totalInvested) * 100 : 0;
